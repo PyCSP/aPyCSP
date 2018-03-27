@@ -1,52 +1,50 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: latin-1 -*-
 """
-Copyright (c) 2007 John Markus Bjørndalen, jmb@cs.uit.no.
+Copyright (c) 2018 John Markus Bjørndalen, jmb@cs.uit.no.
 See LICENSE.txt for licensing details (MIT License).
 """
 from common import *
-from pycsp import *
-from pycsp.plugNplay import *
-import threading
+from apycsp import *
+from apycsp.plugNplay import *
 import time
 
 N = 5
 
-
-def WN(cout):
-    pid = threading.currentThread()
+@process
+async def WN(pid, cout):
     for i in range(N):
         print("  [%s] Writing %d" % (pid, i))
-        cout(i)
-        time.sleep(0.1)
+        await cout(i)
+        await asyncio.sleep(0.1)
     print("Writer [%s] wrote all" % pid)
-    poisonChannel(cout)
+    await poisonChannel(cout)
 
-def RN(cin):
-    pid = threading.currentThread()
+@process
+async def RN(pid, cin):
     for i in range(N):
-        v = cin()
+        v = await cin()
         print("  [%s] Reading %d" % (pid, v))
-        time.sleep(0.1)
+        await asyncio.sleep(0.1)
     print("Reader [%s] got all" % pid)
-    poisonChannel(cin)
+    await poisonChannel(cin)
 
 # TODO: Robert
-def FastWN(cout):
-    pid = threading.currentThread()
+@process
+async def FastWN(pid, cout):
     for i in range(50):
         print("  [%s] Writing %d" % (pid, i))
-        cout(i)
-        #time.sleep(0.1)
+        await cout(i)
+        #await asyncio.sleep(0.1)
     print("Writer [%s] wrote all" % pid)
-    poisonChannel(cout)
+    await poisonChannel(cout)
 
 # TODO: Robert
-def FastRN(cin):
-    pid = threading.currentThread()
+@process
+async def FastRN(pid, cin):
     try:
         while 1:
-            v = cin()
+            v = await cin()
             print("  [%s] Reading %d" % (pid, v))
     except ChannelPoisonException:
         print('Reader [%s] caught poison exception' % pid)
@@ -56,26 +54,26 @@ def o2otest():
     print("Testing One2One Channel")
     print("Reader and writer should both report as done")
     c = One2OneChannel()
-    Parallel(Process(WN, c.write),
-             Process(RN, c.read))
+    Parallel(WN(1,c.write),
+             RN(2, c.read))
 
 def o2atest():
     print("-----------------------")
     print("Testing One2Any Channel")
     print("Writer should report as done, none of the readers should")
     c = One2AnyChannel()
-    Parallel(Process(WN, c.write),
-             Process(RN, c.read),
-             Process(RN, c.read))
+    Parallel(WN(1, c.write),
+             RN(2, c.read),
+             RN(3, c.read))
     
 def a2otest():
     print("-----------------------")
     print("Testing Any2One Channel")
     print("Reader should report as done, none of the writers should")
     c = Any2OneChannel()
-    Parallel(Process(WN, c.write),
-             Process(WN, c.write),
-             Process(RN, c.read))
+    Parallel(WN(1, c.write),
+             WN(2, c.write),
+             RN(3, c.read))
 
 def a2atest():
     print("-----------------------")
@@ -84,10 +82,10 @@ def a2atest():
     # TODO: potential race if one of the writers/readers finish early and poison the channel!
     # the same problem might occur above as well! 
     c = Any2AnyChannel()
-    Parallel(Process(WN, c.write),
-             Process(WN, c.write),
-             Process(RN, c.read),
-             Process(RN, c.read))
+    Parallel(WN(1, c.write),
+             WN(2, c.write),
+             RN(3, c.read),
+             RN(4, c.read))
 
 
 def bo2otest():
@@ -95,8 +93,8 @@ def bo2otest():
     print("Testing BufferedOne2One Channel")
     print("Reader and writer should both report as done")
     c = BufferedOne2OneChannel()
-    Parallel(Process(FastWN, c.write),
-             Process(FastRN, c.read))
+    Parallel(FastWN(1, c.write),
+             FastRN(2, c.read))
 
 
 o2otest()

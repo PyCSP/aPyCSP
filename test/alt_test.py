@@ -1,37 +1,44 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: latin-1 -*-
-# Copyright (c) 2007 John Markus Bjørndalen, jmb@cs.uit.no.
+# Copyright (c) 2018 John Markus Bjørndalen, jmb@cs.uit.no.
 # See LICENSE.txt for licensing details (MIT License). 
 from common import *
-from pycsp import *
-from pycsp.plugNplay import *
+from apycsp import *
+from apycsp.plugNplay import *
 
-def AltTest():
+@process
+async def AltTest_p():
     sg1 = Skip()
     sg2 = Skip()
     ch = One2OneChannel()
-    alt = Alternative(sg1,sg2, ch.read)
-    ret = alt.select()
+    alt = Alternative(sg1, sg2, ch.read)
+    ret = await alt.select()
     print("Returned from alt.select():", ret)
 
-def p1(cin):
+@process
+async def p1(cin):
     print("Bip 1")
     alt = Alternative(cin)
     for i in range(10):
         print("ding 1")
-        ret = alt.select()
-        print("p1: got from select:", ret, type(ret), ret())
-    
-def p2(cout):
+        ret = await alt.select()
+        val = await ret()
+        print("p1: got from select:", ret, type(ret), val)
+        
+@process    
+async def p2(cout):
     print("Bip 2")
     for i in range(10):
-        cout("foo %d" % i)
+        await cout("foo %d" % i)
 
 
+def AltTest():
+    Sequence(AltTest_p())
+    
 def AltTest2():
     c = One2OneChannel()
-    Parallel(Process(p1, c.read),
-             Process(p2, c.write))
+    Parallel(p1(c.read),
+             p2(c.write))
 
 AltTest()
 AltTest2()

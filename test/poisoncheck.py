@@ -1,18 +1,18 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: latin-1 -*-
-# Copyright (c) 2007 John Markus Bjørndalen, jmb@cs.uit.no.
+# Copyright (c) 2018 John Markus Bjørndalen, jmb@cs.uit.no.
 # See LICENSE.txt for licensing details (MIT License).
 
 from common import *
-from pycsp import *
-from pycsp.plugNplay import *
+from apycsp import *
+from apycsp.plugNplay import *
 
 @process
-def PoisonTest(cout):
+async def PoisonTest(cout):
     for i in range(100):
         print(i)
-        cout(i)
-    poisonChannel(cout)
+        await cout(i)
+    await poisonChannel(cout)
 
 def test():
     a = One2OneChannel("a")
@@ -28,17 +28,17 @@ def test():
         print("State of channel", ch.name, "- poisoned is", ch.poisoned)
 
 @process
-def PoisonReader(cin):
+async def PoisonReader(cin):
     for i in range(100):
-        r = cin()
+        r = await cin()
         print(i, r)
-    cin.poison()
+    await cin.poison()
 
 @process
-def Count(cout):
+async def Count(cout):
     i = 0
     while 1:
-        cout(i)
+        await cout(i)
         i += 1
 
 def test2():

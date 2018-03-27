@@ -1,27 +1,27 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: latin-1 -*-
 from common import *
-from pycsp import *
-from pycsp.plugNplay import *
+from apycsp import *
+from apycsp.plugNplay import *
 import os
 
 @process
-def Consumer(cin):
+async def consumer(cin):
     "Commstime consumer process"
     N = 5000
     ts = time.time
     t1 = ts()
-    cin()
+    await cin()
     t1 = ts()
     for i in range(N):
-        cin()
+        await cin()
     t2 = ts()
     dt = t2-t1
     tchan = dt / (4 * N)
     print("DT = %f.\nTime per ch : %f/(4*%d) = %f s = %f us" % \
           (dt, dt, N, tchan, tchan * 1000000))
     print("consumer done, posioning channel")
-    poisonChannel(cin)
+    await cin.poison()
 
 def CommsTimeBM():
     # Create channels
@@ -37,7 +37,8 @@ def CommsTimeBM():
     Parallel(Prefix(c.read, a.write, prefixItem = 0),  # initiator
              Delta2(a.read, b.write, d.write),         # forwarding to two
              Successor(b.read, c.write),               # feeding back to prefix
-             Consumer(d.read))                         # timing process
+             consumer(d.read))                         # timing process
+
 
 N_BM = 10
 for i in range(N_BM):

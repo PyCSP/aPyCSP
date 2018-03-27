@@ -1,28 +1,28 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: latin-1 -*-
 """
 CSP Guards for PyCSP.
 
-Copyright (c) 2007 John Markus Bjørndalen, jmb@cs.uit.no.
+Copyright (c) 2018 John Markus Bjørndalen, jmb@cs.uit.no.
 See LICENSE.txt for licensing details (MIT License).
 """
 
 import time
-import threading
+import asyncio
 
 class Guard(object):
     # JCSPSRC/src/com/quickstone/jcsp/lang/Guard.java
-    def enable(self, alt):
+    async def enable(self, alt):
         return False
-    def disable(self):
+    async def disable(self):
         return False
 
 class Skip(Guard):
     # JCSPSRC/src/com/quickstone/jcsp/lang/Skip.java
-    def enable(self, alt):
+    async def enable(self, alt):
         #Thread.yield() in java version
         return True
-    def disable(self):
+    async def disable(self):
         return True
 
 # class CSTimer(Guard):

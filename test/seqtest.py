@@ -4,19 +4,20 @@
 # See LICENSE.txt for licensing details (MIT License).
 
 from common import *
-from pycsp import *
-from pycsp.plugNplay import *
+from apycsp import *
+from apycsp.plugNplay import *
 
-def TestProc(n):
+@process
+async def TestProc(n):
     print("This is test proc", n)
 
-Sequence(Process(TestProc, 1),
-         Process(TestProc, 2),
-         Process(TestProc, 3))
+Sequence(TestProc(1),
+         TestProc(2),
+         TestProc(3))
 
 
 @process
-def TestProc2(n):
+async def TestProc2(n):
     print("This is test proc", n)
 
 Sequence(TestProc2(1),
