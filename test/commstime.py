@@ -22,6 +22,7 @@ async def consumer(cin):
           (dt, dt, N, tchan, tchan * 1000000))
     print("consumer done, posioning channel")
     await cin.poison()
+    return tchan
 
 def CommsTimeBM():
     # Create channels
@@ -34,16 +35,21 @@ def CommsTimeBM():
     # Rather than pass the objects and get the channel ends wrong, or doing complex
     # addons like in csp.net, i simply pass the write and read functions as channel ends.
     # Note: c.read.im_self == c, also check im_func, im_class
-    Parallel(Prefix(c.read, a.write, prefixItem = 0),  # initiator
-             Delta2(a.read, b.write, d.write),         # forwarding to two
-             Successor(b.read, c.write),               # feeding back to prefix
-             consumer(d.read))                         # timing process
+    rets = Parallel(Prefix(c.read, a.write, prefixItem = 0),  # initiator
+                    Delta2(a.read, b.write, d.write),         # forwarding to two
+                    Successor(b.read, c.write),               # feeding back to prefix
+                    consumer(d.read))                         # timing process
+    return rets[-1]
 
 
 N_BM = 10
+tchans = []
 for i in range(N_BM):
     print("----------- run %d/%d -------------" % (i+1, N_BM))
-    CommsTimeBM()
+    tchans.append(CommsTimeBM())
+print("Min {:7.3f}  Avg {:7.3f} Max {:7.3f}".format(1_000_000 * min(tchans),
+                                                    1_000_000 * sum(tchans)/len(tchans), 
+                                                    1_000_000 * max(tchans)))
 
 # A bit of a hack, but windows does not have uname()
 try:

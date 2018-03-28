@@ -11,7 +11,11 @@ import inspect
 import functools
 from .Guards import Guard
 
-_ASYNC_TRIM = True
+# Optimisation trick /experiment to rewrite coroutines that only run a return await X into ordinary functions
+# that return X directly. TODO: should probably remove it soon as it doesn't seem to influence anything in a
+# measurable way for commstime. We should try other experiments first to make sure. 
+# The drawback of the trick is that methods will not be exposed as coroutines. 
+_ASYNC_TRIM = False
 
 # ------------------------------------------------------------
 # Some helper decorators, functions and classes.
