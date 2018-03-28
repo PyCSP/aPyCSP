@@ -44,15 +44,8 @@ Future considerations
 ============
 
 I have not made any attempt at optimising the implementation so
-far. As of 2018-03-27, the implementaion appears to be slower than the
-thread based version (commstime is 10-15% slower, for instance), but I
-haven't identified the main culprit so far. Context switches are
-supposed to be faster than function calls, so the liberal use of
-awaits _should_ not be the main reason, and simple experiments seem to
-confirm to that simple recursive awaits at differen chain lengths do
-not introduce much overhead. The pattern is more complicated here, and
-we should probably try to compare thread and asyncio implementations
-of Conditions, Locks etc to make sure.
+far. As of 2018-03-28, the implementaion is slightly faster than the
+thread based implementation (17.8us vs 26.6us on commstime). 
 
 A simplified channel implementation is much faster than the tread
 based implementation, but does not provide all the mechanisms for ALT,
@@ -62,6 +55,19 @@ It might be possible to "hide" the differences between the thread and
 asyncio version. An example is aParallel vs Parallel, but it would be
 better with a more flexible and safer method that doesn't require the
 user to use different names for the functions.
+
+Memory usage
+------
+
+It uses less memory per process for a simple process experiment (~5KB
+vs 13KB when measuring only RSS), and since it's not limited to max
+threads per user, it scales to more CSP processes. 
+
+On a 64GB computer, the thread based version maxed out at 9900
+processes (running out of threads before running out of memory) while
+this version is capable of 12 million processes consuming about 58GB
+RAM.
+
 
 
 
