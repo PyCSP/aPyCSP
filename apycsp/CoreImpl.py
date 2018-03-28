@@ -19,16 +19,14 @@ import inspect
 # At the moment, we're managing with a simple decorator function. 
 def process(func):
     @functools.wraps(func)
-    async def wrapped(*args, **kwargs):
+    async def proc_wrapped(*args, **kwargs):
         try:
             return await func(*args, **kwargs)
         except ChannelPoisonException as e:
-            #print(f"Tasted poison in {func}")
             # look for channels and channel ends to propagate poison
             for ch in [x for x in args if isinstance(x, ChannelEnd) or isinstance(x, Channel)]:
-                #print("**** propagating poison", ch)
                 await ch.poison()
-    return wrapped
+    return proc_wrapped
 
 def Parallel(*procs):
     loop = asyncio.get_event_loop()
@@ -45,7 +43,8 @@ async def aSequence(*procs):
     return [await p for p in procs]
 
 def Spawn(proc):
-    """For running a process in the background. Actual execution is only possible as long as the event loop is running"""
+    """For running a process in the background. Actual execution is only
+    possible as long as the event loop is running"""
     loop = asyncio.get_event_loop()
     return loop.create_task(proc)
 

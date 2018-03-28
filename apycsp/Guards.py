@@ -26,9 +26,8 @@ class Skip(Guard):
         return True
 
 # class CSTimer(Guard):
-# TODO: may need a process to do this? 
+# TODO: may need a process to do this?
 
-# TODO: Robert
 # Spawns a separate timer thread. How does that affect poison etc? Any problems?
 # Might want to create a process to properly catch poison. 
 class Timer(Guard):

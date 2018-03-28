@@ -11,6 +11,8 @@ import inspect
 import functools
 from .Guards import Guard
 
+_ASYNC_TRIM = True
+
 # ------------------------------------------------------------
 # Some helper decorators, functions and classes.
 #
@@ -18,24 +20,20 @@ def synchronized(func):
     """Decorator for creating java-like monitor functions. """
     # We just need to make sure we can correctly decorate both coroutines and ordinary methods and functions. 
     is_coroutine = inspect.iscoroutinefunction(func)
-    #print(f"synchronzing {func}, is_coroutine={is_coroutine}")
     @functools.wraps(func)
-    async def a_call(self, *args, **kwargs):
-        #print("sync", is_coroutine, func, args, kwargs)
-        with await self._cond:
-            #print("sync", is_coroutine, func, args, kwargs, "got cond")
+    async def s_wrap(self, *args, **kwargs):
+        with await self._cond: # TODO: async with X is much slower than with await X
             if is_coroutine:
                 return await func(self, *args, **kwargs)
             return func(self, *args, **kwargs)
-    return a_call
+    return s_wrap
 
 def chan_poisoncheck(func):
     "Decorator for making sure that poisoned channels raise exceptions"
     # We just need to make sure we can correctly decorate both coroutines and ordinary methods and functions. 
     is_coroutine = inspect.iscoroutinefunction(func)
-    #print(f"poisonchecking {func}, is_coroutine={is_coroutine}")
     @functools.wraps(func)
-    async def _call(self, *args, **kwargs):
+    async def p_wrap(self, *args, **kwargs):
         if self.poisoned:
             raise ChannelPoisonException()
         try:
@@ -45,7 +43,7 @@ def chan_poisoncheck(func):
         finally:
             if self.poisoned:
                 raise ChannelPoisonException()
-    return _call
+    return p_wrap
 
 async def poisonChannel(ch):
     "Poisons a channel or a channel end"
@@ -84,16 +82,26 @@ class ChannelEnd(object):
 class ChannelOutputEnd(ChannelEnd):
     def __init__(self, chan):
         ChannelEnd.__init__(self, chan)
-    async def __call__(self, val):
-        return await self._chan._write(val)
+    if _ASYNC_TRIM:
+        def __call__(self, val):
+            "Returns a coroutine" 
+            return self._chan._write(val)
+    else:
+        async def __call__(self, val):
+            return await self._chan._write(val)
     def __repr__(self):
         return "<ChannelOutputEnd wrapping %s>" % self._chan
 
 class ChannelInputEnd(ChannelEnd):
     def __init__(self, chan):
         ChannelEnd.__init__(self, chan)
-    async def __call__(self):
-        return await self._chan._read()
+    if _ASYNC_TRIM:
+        def __call__(self):
+            "Returns a coroutine" 
+            return self._chan._read()
+    else:
+        async def __call__(self):
+            return await self._chan._read()
     def __repr__(self):
         return "<ChannelInputEnd wrapping %s>" % self._chan
 
@@ -114,10 +122,18 @@ class ChannelInputEndGuard(ChannelInputEnd, Guard):
         ChannelInputEnd.__init__(self, chan)
     def __repr__(self):
         return "<ChannelInputEndWGuard wrapping %s>" % self._chan
-    async def enable(self, guard):
-        return await self._chan._ienable(guard)
-    async def disable(self):
-        return await self._chan._idisable()
+    if _ASYNC_TRIM:
+        def enable(self, guard):
+            "Returns a coroutine" 
+            return self._chan._ienable(guard)
+        def disable(self):
+            "Returns a coroutine" 
+            return self._chan._idisable()
+    else:
+        async def enable(self, guard):
+            return await self._chan._ienable(guard)
+        async def disable(self):
+            return await self._chan._idisable()
 
 
 # TODO: we could support ChannelOutput guards with the following semantics:
@@ -135,9 +151,9 @@ class Channel(object):
         self.poisoned = False
         self.write = ChannelOutputEnd(self)
         self.read  = ChannelInputEnd(self)
-    def _write(self, val):
+    async def _write(self, val):
         raise "default method"
-    def _read(self):
+    async def _read(self):
         raise "default method"
     async def poison(self):
         self.poisoned = True
@@ -181,36 +197,29 @@ class One2OneChannel(Channel):
     @synchronized
     @chan_poisoncheck
     async def _write(self, obj = None):
-        #print("_write", obj)
         self.hold = obj
         if self._pending:
-            #print("_write: got pending, about to notify rwmonitor")
             # reader entered first and is waiting for us.
             # start the exit protocol (set pending to False and notify the other end)
             self._pending = False
             self.rwMonitor.notify()
         else:
-            #print("_write: no pending")
             # we entered first, tell reader that we are waiting
             self._pending = True
             if self._ialt != None:
                 # The channel is enabled as an input guard, so do the wake-up-call. 
                 await self._ialt.schedule()
-        #print("_write: await rwMonitor.wait()")
         await self.rwMonitor.wait()
 
     @synchronized
     @chan_poisoncheck
     async def _read(self):
-        #print("_read: kjdkfjdf")
         if self._pending:
             # writer entered first and is waiting for us
             # start the exit protocol (set pending to False and notify the other end)
-            #print("_read: pending")
             self._pending = False
         else:
             # we entered first, tell writer that we are waiting
-            #print("_read: should await rwMonitor")
             self._pending = True    
             await self.rwMonitor.wait()
         hold = self.hold            # grab a copy before waking up writer 
@@ -281,7 +290,6 @@ class Any2AnyChannel(One2AnyChannel):
         with await self.writerLock:  # ensure that only one writer attempts to write at any time
             return await super()._write(obj)
 
-# TODO: Robert
 # TODO: could use Queue as well, but that's another level of threading locks. 
 class FifoBuffer(object):
     """NB: This class is not thread-safe. It should be protected by the user."""
@@ -306,8 +314,6 @@ class FifoBuffer(object):
 # NB/TODO:
 # - The naming is different from JCSP, where a buffered channel is, for instance
 #   One2OneChannelX.java
-
-# TODO: Robert
 class BufferedOne2OneChannel(Channel):
     def __init__(self, name=None, buffer=None, bufsize=10):
         Channel.__init__(self, name)

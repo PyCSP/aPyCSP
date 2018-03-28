@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: latin-1 -*-
 # Copyright (c) 2007 John Markus Bjørndalen, jmb@cs.uit.no.
 # See LICENSE.txt for licensing details (MIT License).
