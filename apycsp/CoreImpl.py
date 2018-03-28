@@ -11,7 +11,6 @@ import time
 import asyncio
 import types
 from .Channels import *
-import types
 import functools
 import inspect
 
