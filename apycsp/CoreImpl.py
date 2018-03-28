@@ -32,21 +32,17 @@ def process(func):
 
 def Parallel(*procs):
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(asyncio.wait(procs))
-    # TODO : should probably use gather so we can return the list of return values from the procs
-    # return [p.retval for p in processes]
+    return loop.run_until_complete(asyncio.gather(*procs))
     
 def Sequence(*procs):
     loop = asyncio.get_event_loop()
-    for p in procs:
-        loop.run_until_complete(asyncio.wait([p]))
+    return [loop.run_until_complete(p) for p in procs]
 
 async def aParallel(*procs):
-    await asyncio.wait(procs)
+    return await asyncio.gather(*procs)
 
 async def aSequence(*procs):
-    for p in procs:
-        await p
+    return [await p for p in procs]
 
 def Spawn(proc):
     """For running a process in the background. Actual execution is only possible as long as the event loop is running"""
