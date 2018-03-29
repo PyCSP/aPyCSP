@@ -29,24 +29,28 @@ class Skip(Guard):
 # TODO: may need a process to do this?
 
 # Spawns a separate timer thread. How does that affect poison etc? Any problems?
-# Might want to create a process to properly catch poison. 
+# Might want to create a process to properly catch poison.
+# How do you cancel this if another guard was taken first?
+# TODO: this is just a rough sketch now. It should be reviewed and tested properly. 
 class Timer(Guard):
     def __init__(self, seconds):
         self.expired = False
-        self.timer = threading.Timer(seconds, self.expire)
         self.alt = None
+        self.seconds = seconds
+        self.cb = None
 
-    def enable(self, alt):
+    async def enable(self, alt):
         self.alt = alt
-        self.timer.start()
+        self.cb = asyncio.call_later(self.seconds,
+                                     self.expire)
         return False
 
-    def disable(self):
-        self.timer.cancel()
+    async def disable(self):
+        self.cb.cancel()
         self.alt = None
         return self.expired
         
-    def expire(self):
+    async def expire(self):
         self.expired = True
-        self.alt.schedule()
+        await self.alt.schedule()
         
