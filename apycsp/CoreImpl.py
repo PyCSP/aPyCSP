@@ -127,3 +127,14 @@ class Alternative(object):
             self.state = _ALT_READY
             self._altMonitor.notify()
 
+    # Support for asynchronous context managers. This lets us use this pattern as an alternative to
+    # a = ALT.select(): 
+    # async with ALT as a:
+    #     ....
+    # NB: we may need to specify options to Alt if we want other options than priSelect
+    async def __aenter__(self):
+        return await self.select()
+
+    async def __aexit__(self, exc_type, exc, tb):
+        # TODO: we might want to run some cleanups here.
+        return None
