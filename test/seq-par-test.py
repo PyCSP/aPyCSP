@@ -13,29 +13,16 @@ async def TestProc(n):
     return f'proc{n}'
 
 print("---- Testing Sequence")
-r = Sequence(TestProc(1),
-             TestProc(2),
-             TestProc(3))
-print("Return values", r)
-
-
-print("\n---- Test of aSequence")
-loop = asyncio.get_event_loop()
-r = loop.run_until_complete(aSequence(TestProc(1),
-                                      TestProc(2),
-                                      TestProc(3)))
+r = run_CSP(Sequence(TestProc(1),
+                     TestProc(2),
+                     TestProc(3)))
 print("Return values", r)
 
 
 print("\n---- Test of Parallel")
-r = Parallel(TestProc(1),
-             TestProc(2),
-             TestProc(3))
+r = run_CSP(Parallel(TestProc(1),
+                     TestProc(2),
+                     TestProc(3)))
 print("Return values", r)
 
 
-print("\n---- Test of aParallel")
-r = loop.run_until_complete(aParallel(TestProc(1),
-                                      TestProc(2),
-                                      TestProc(3)))
-print("Return values", r)

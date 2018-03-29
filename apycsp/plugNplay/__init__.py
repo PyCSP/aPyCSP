@@ -7,7 +7,7 @@ Copyright (c) 2018 John Markus Bjørndalen, jmb@cs.uit.no.
 See LICENSE.txt for licensing details (MIT License). 
 """
 
-from apycsp import process, Channel, ChannelPoisonException, Alternative
+from apycsp import process, Channel, ChannelPoisonException, Alternative, Parallel
 
 
 @process
@@ -26,13 +26,56 @@ async def Prefix(cin, cout, prefixItem=None):
         t = await cin()
 
 @process
-async def Delta2(cin, cout1, cout2):
-    # TODO: JCSP version sends the output in parallel. Should this be modified to do the same? 
+async def SeqDelta2(cin, cout1, cout2):
+    # Sequential version TODO: JCSP version sends the output in parallel. Should this be modified to do the same? 
     while True:
         t = await cin()
         await cout1(t)
         await cout2(t)
 
+@process
+async def ParDelta2(cin, cout1, cout2):
+    while True:
+        t = await cin()
+        # JCSP version uses a Par here, so we do the same.
+        await Parallel(cout1(t),
+                       cout2(t))
+
+# experimental version to pinpoint the PAR overhead
+import asyncio
+@process
+async def ParDelta2_t(cin, cout1, cout2):
+    l = asyncio.get_event_loop()
+    #l = asyncio.get_event_loop()
+    case = 11
+    while True:
+        t = await cin()
+        # JCSP version uses a Par here, so we do the same.
+        if case == 10:
+            done, pending = await asyncio.wait([cout1(t), cout2(t)])
+            [x.result() for x in done] # need to do this to catch exceptions
+        elif case == 11:
+            done, pending = await asyncio.wait([cout1(t)])
+            [x.result() for x in done]
+            done, pending = await asyncio.wait([cout2(t)])
+            [x.result() for x in done]
+        elif case == 15:
+            # Doesn't work. run_until_complete is already running outside this scope.
+            l.run_until_complete(asyncio.wait([cout1(t), cout2(t)]))
+        elif case == 20:
+            res = await asyncio.gather(cout1(t), cout2(t))
+        elif case == 21:
+            res = await asyncio.gather(cout1(t))
+            res = await asyncio.gather(cout2(t))
+        elif case == 30:
+            await cout1(t)
+            await cout2(t)
+        else:
+            raise Exception("Fooo")
+        #print(res)
+
+Delta2 = ParDelta2
+        
 @process
 async def Successor(cin, cout):
     """Adds 1 to the value read on the input channel and outputs it on the output channel.

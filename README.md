@@ -69,6 +69,34 @@ this version is capable of 12 million processes consuming about 58GB
 RAM.
 
 
+Multithreading
+----------
+
+Multithreading has not been invest igated yet. Asyncio has some
+support for it, but the event loops are thread local, which means that
+moving a task/coroutine between threads might require moving the
+coroutine between event loops. There might also be an issue with
+synchronization between coroutines running in different threads that
+should be considered. 
+
+
+gather/wait overhead
+----------------
+
+On my computer, asyncio.gather or wait both add around 8 microseconds
+to the runtime to commstime. 
+
+A sequential Delta2 (send to both output channels in sequence) reports
+a chan time of 18-19us. Running the sends/writes in a Parallel or
+using gather or wait manually both add around 8us. Running them
+sequentially through two gather/waits in sequence adds another 8us, so
+there is clearly an overhead of about 8us each time we use them.
+
+This should be investigated further to see if we can find something
+that does the same with lower overhead. Could this be a result of
+being appended to an event queue of some sort?
+
+
 
 
 

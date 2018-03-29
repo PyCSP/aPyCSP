@@ -33,12 +33,12 @@ async def p2(cout):
 
 
 def AltTest():
-    Sequence(AltTest_p())
+    run_CSP(AltTest_p())
     
 def AltTest2():
     c = One2OneChannel()
-    Parallel(p1(c.read),
-             p2(c.write))
+    run_CSP(p1(c.read),
+            p2(c.write))
 
 AltTest()
 AltTest2()

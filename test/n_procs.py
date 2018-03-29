@@ -40,7 +40,7 @@ def run_n_procs(n):
     tasks = [simple_proc(i, ch.write, pch.read) for i in range(N_PROCS)]
     tasks.append(killer(ch.read, pch, n))
     t2 = time.time()
-    res = Parallel(*tasks)
+    res = run_CSP(*tasks)
     t3 = time.time()
     rss = res[-1]
     tcr = t2-t1

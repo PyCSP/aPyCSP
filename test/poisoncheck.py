@@ -20,10 +20,10 @@ def test():
     c = One2OneChannel("c")
     d = BlackHoleChannel("d")
 
-    Parallel(PoisonTest(a.write),
-             Identity(a.read, b.write),
-             Identity(b.read, c.write),
-             Identity(c.read, d.write))
+    run_CSP(PoisonTest(a.write),
+            Identity(a.read, b.write),
+            Identity(b.read, c.write),
+            Identity(c.read, d.write))
     for ch in [a,b,c,d]:
         print("State of channel", ch.name, "- poisoned is", ch.poisoned)
 
@@ -43,9 +43,9 @@ async def Count(cout):
 
 def test2():
     a = Any2OneChannel()
-    Parallel(Count(a.write),
-             Count(a.write),
-             PoisonReader(a.read))
+    run_CSP(Count(a.write),
+            Count(a.write),
+            PoisonReader(a.read))
     print("Processes done")
 
 if __name__ == "__main__":

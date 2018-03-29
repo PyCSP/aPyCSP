@@ -22,23 +22,30 @@ def process(func):
         try:
             return await func(*args, **kwargs)
         except ChannelPoisonException as e:
-            # look for channels and channel ends to propagate poison
+            # Propagate poison to any channels and channelends passed as parameters to the process
             for ch in [x for x in args if isinstance(x, ChannelEnd) or isinstance(x, Channel)]:
                 await ch.poison()
     return proc_wrapped
 
-def Parallel(*procs):
+# TODO: should consider alternative naming of these functions. 
+def run_CSP(*procs):
+    """Runs the CSP processes in parallel (equivalent to a PAR)
+    Intended to be used by the outer sequential program that starts running a CSP network. 
+    """
     loop = asyncio.get_event_loop()
     return loop.run_until_complete(asyncio.gather(*procs))
-    
-def Sequence(*procs):
+
+def run_CSP_seq(*procs):
+    """Runs the CSP processes in one by one (equivalent to a SEQ). 
+    Intended to be used by the outer sequential program that starts running a CSP network. 
+    """
     loop = asyncio.get_event_loop()
     return [loop.run_until_complete(p) for p in procs]
 
-async def aParallel(*procs):
+async def Parallel(*procs):
     return await asyncio.gather(*procs)
 
-async def aSequence(*procs):
+async def Sequence(*procs):
     return [await p for p in procs]
 
 def Spawn(proc):
