@@ -97,7 +97,22 @@ that does the same with lower overhead. Could this be a result of
 being appended to an event queue of some sort?
 
 
+Update 2018-03-31: uvloop is a drop-in replacement for the asyncio
+event loop which significantly improves aPyCSP in commstime. We should
+experiment further with this one.
 
+It can be installed with `apt install python3-uvloop`, and the source is available here: 
+ 
+https://github.com/magicstack/uvloop
 
+The following code illustrates how it's used, and suggests that we can
+easily run benchmarks with and without uvloop without changing a line
+of code in the aPyCSP library code.
+
+``` Python
+import asyncio
+import uvloop
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+```
 
 

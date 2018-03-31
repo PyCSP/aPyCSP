@@ -47,7 +47,7 @@ import asyncio
 async def ParDelta2_t(cin, cout1, cout2):
     l = asyncio.get_event_loop()
     #l = asyncio.get_event_loop()
-    case = 11
+    case = 10
     while True:
         t = await cin()
         # JCSP version uses a Par here, so we do the same.

@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+# -*- coding: latin-1 -*-
+from common import *
+from apycsp import *
+from apycsp.plugNplay import *
+import os
+
+# faster option for the event loop.  
+# https://magic.io/blog/uvloop-blazing-fast-python-networking/
+import uvloop
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+
+
+@process
+async def consumer(cin):
+    "Commstime consumer process"
+    N = 5000
+    ts = time.time
+    t1 = ts()
+    await cin()
+    t1 = ts()
+    for i in range(N):
+        await cin()
+    t2 = ts()
+    dt = t2-t1
+    tchan = dt / (4 * N)
+    print("DT = %f.\nTime per ch : %f/(4*%d) = %f s = %f us" % \
+          (dt, dt, N, tchan, tchan * 1000000))
+    print("consumer done, posioning channel")
+    await cin.poison()
+    return tchan
+
+def CommsTimeBM():
+    # Create channels
+    a = One2OneChannel("a")
+    b = One2OneChannel("b")
+    c = One2OneChannel("c")
+    d = One2OneChannel("d")
+
+    print("Running commstime test")
+    # Rather than pass the objects and get the channel ends wrong, or doing complex
+    # addons like in csp.net, i simply pass the write and read functions as channel ends.
+    # Note: c.read.im_self == c, also check im_func, im_class
+    rets = run_CSP(Prefix(c.read, a.write, prefixItem = 0),  # initiator
+                   Delta2(a.read, b.write, d.write),         # forwarding to two
+                   Successor(b.read, c.write),               # feeding back to prefix
+                   consumer(d.read))                         # timing process
+    return rets[-1]
+
+
+N_BM = 10
+tchans = []
+for i in range(N_BM):
+    print("----------- run %d/%d -------------" % (i+1, N_BM))
+    tchans.append(CommsTimeBM())
+print("Min {:7.3f}  Avg {:7.3f} Max {:7.3f}".format(1_000_000 * min(tchans),
+                                                    1_000_000 * sum(tchans)/len(tchans), 
+                                                    1_000_000 * max(tchans)))
+
+# A bit of a hack, but windows does not have uname()
+try:
+    os.uname()
+except:
+    print("Sleeping for a while to allow windows users to read benchmark results")
+    time.sleep(15)
