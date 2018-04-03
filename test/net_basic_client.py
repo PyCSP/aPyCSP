@@ -5,6 +5,16 @@ import apycsp
 import apycsp.net
 import asyncio
 import time
+import argparse
+
+aparser = argparse.ArgumentParser()
+aparser.add_argument("-u", "--uvloop", help='use uvloop', action="store_const", const=True, default=False)
+args = aparser.parse_args()
+
+if args.uvloop:
+    print("Using uvloop as an event loop")
+    import uvloop
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 loop = asyncio.get_event_loop()
 
@@ -45,17 +55,18 @@ def measure_ch_read(print_hdr=True):
         print("\n--------------------------- ")
         print("Reading from remote channel")
     @apycsp.process
-    async def reader(chname, N):
-        ch = apycsp.net.RemoteChan(chname)
+    async def reader(rchan, N):
         tot = 0
         for i in range(N):
-            v = await ch.read()
+            v = await rchan.read()
             tot += v
-        print("Total", tot)
+        if tot != 42 * N:
+            print("Total not the expected value", tot, 42*N)
 
     N = 1000
     t1 = time.time()
-    loop.run_until_complete(reader('net_t2', N))
+    rchan = apycsp.net.RemoteChan('net_t2') 
+    loop.run_until_complete(reader(rchan, N))
     t2 = time.time()
     dt_ms = (t2-t1) * 1000
     us_msg = 1000 * dt_ms / N
@@ -67,5 +78,4 @@ for i in range(5):
     measure_rt(i==0)
 for i in range(5):
     measure_ch_read(i==0)
-
 

@@ -173,6 +173,13 @@ async def _handle_cmd(cmd, oqueue = None):
         print("Server asked to print {}".format(cmd['args']))
         await oqueue.put({'ack' : msgno, 'ret' : 'ack'})
         return
+
+    if op == "chanlist":
+        # List of channel names registered in this server
+        chlist = list(_chan_registry.keys())
+        print("Returning channel list", chlist)
+        await oqueue.put({'ack' : msgno, 'ret' : chlist})
+        return
     
     await oqueue.put({'ack' : msgno, 'ret': None, 'err': f'command {op} not recognized'})
     print("handle done")
@@ -227,7 +234,13 @@ async def _setup_client(host = '127.0.0.1', port=8890, loop=None):
     async def _handler(cmd, oqueue=rqueue):
         """Puts the incoming command on the receive queue for that message id"""
         msgno = cmd['ack']
-        rq = _opqueue[msgno]
+        try:
+            rq = _opqueue[msgno]
+        except KeyError as e:
+            print("Got keyerror for received message", cmd)
+            print("  - keys ", _opqueue.keys())
+            print("  -", e)
+            raise 
         await rq.put(cmd)
         #await rqueue.put(cmd) # global receive queue
     loop.create_task(_queue_sender(oqueue, writer))
@@ -251,6 +264,9 @@ async def _send_recv_cmd(cmd, msgno):
     del _opqueue[msgno]  # delete queue after command is finished
     return res['ret']
 
+# TODO: send_message_sync doesn't work when called from a coroutine already executed by the event loop.
+# The event loop is not "reentrant", so you can't provide something that has a "synchronous"
+# external interface and use it from an async function using the below method. 
 def send_message_sync(cmd):
     """Synchronous send/recv of a message for debug purposes. 
     NB: a unique msgno will be inserted into the cmd."""
@@ -265,10 +281,29 @@ class RemoteChan:
     """Proxy object for using a remote channel. 
     Only supports simple read/write mechanics at the moment. 
     """
-    def __init__(self, name, host='127.0.0.1', port=8890):
+    _rchan_reg = {} # class / shared list of known channels in a remote server
+    
+    def __init__(self, name):
         self.name = name
-        self.host = host
-        self.port = port
+        # TODO: Not really used at the moment, this is the initial support for multiple remotes
+        # we may want to add an alias to the remote server when we set up a client connection as well. 
+        self.rconn = self._find_remote(name)
+
+    def _find_remote(self, name):
+        """Find a remote channel. """
+        # TODO: this fails if we allow remote channels to move, or if we reconnect to the remote server
+        if name in self._rchan_reg:
+            return self._rchan_reg[name]
+        # we're not async-creating channels, so we need to use a sync version.
+        # TODO: this causes problems as channels cannot be created inside coroutines (loop.run_until_complete)
+        for clname, conn in _clconn.items():
+            ret = send_message_sync({'op' : 'chanlist'})
+            print("Registering", ret, "as owned by", clname)
+            for name in ret:
+                self._rchan_reg[name] = clname
+
+        
+        
 
     async def write(self, msg):
         msgno = _get_msgno()
