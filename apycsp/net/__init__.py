@@ -104,7 +104,7 @@ async def _queue_sender(queue, writer):
         if msg == 'kill':
             print("Got kill token in _queue_sender. Exiting")
             break
-        print(f"Sending: {msg}")
+        #print(f"Sending: {msg}")
         msg_s = json.dumps(msg) + "\n"
         if writer.transport.is_closing():
             print("Lost connection on writer before we could send message")
@@ -120,10 +120,10 @@ async def _stream_reader(reader, handler, oqueue = None):
     """
     loop = asyncio.get_event_loop()
     while True:
-        print("_stream_reader, waiting")
+        #print("_stream_reader, waiting")
         data = await reader.readline()
         message = data.decode().strip()
-        print(f"Got {message}")
+        #print(f"Got {message}")
         if message is None or message is '':
             print("Probably lost client")
             break
@@ -156,9 +156,9 @@ async def _handle_cmd(cmd, oqueue = None):
     if op in ['read', 'write']:
         name = cmd.get('name', None)
         chan = _chan_registry.get(name, None)
-        print("  -- ops is ", op)
+        #print("  -- ops is ", op)
         if op == 'read':
-            print(" -- trying to read")
+            #print(" -- trying to read")
             res = await chan.read()
         else:
             res = await chan.write(cmd['msg'])
@@ -186,6 +186,7 @@ async def _client_handler(reader, writer):
 
 
 def start_server():
+    """Start the remote channel/op server"""
     loop = asyncio.get_event_loop()
     serv = asyncio.start_server(_client_handler, '127.0.0.1', 8890, loop=loop)
     task = loop.create_task(serv)
@@ -195,12 +196,8 @@ def start_server():
 
 #############################################################
 # 
-# Being a client
+# Client side code (for accessing remote channels)
 #
-
-# TODO: need a queue similar to the other end, and then we need to pair results (with chname+msg#)
-# with the caller and perhaps complete a future for them so they can continue running.
-# The alternative is either a condition variable or a small queue per client operation.
 
 _clconn = {}
 _msgno = 0 # TODO: this should be replaced
@@ -228,23 +225,26 @@ async def _setup_client(host = '127.0.0.1', port=8890, loop=None):
     loop.create_task(_stream_reader(reader, _handler, oqueue))
 
 def setup_client(host = '127.0.0.1', port=8890):
+    """Connect to a server. Currently only supports one connection"""
     loop = asyncio.get_event_loop()
     loop.run_until_complete(_setup_client(host, port, loop))
 
 async def _send_recv_cmd(cmd, msgno):
+    """Sends a command to the remote end, and waits for and returns the result."""
     reader, writer, oqueue, rqueue = _clconn['def']  # TODO: should support multiple remotes.
     # first, get a input queue for that message
     _opqueue[msgno] = asyncio.Queue()
-    print("cl sending", cmd)
+    #print("cl sending", cmd)
     await oqueue.put(cmd)
-    print("cl sent, now waiting")
+    #print("cl sent, now waiting")
     res = await _opqueue[msgno].get()
-    print("cl got", res)
+    #print("cl got", res)
     del _opqueue[msgno]  # delete queue after command is finished
     return res
 
 def send_message_sync(cmd):
-    """NB: a unique msgno will be inserted into the cmd"""
+    """Synchronous send/recv of a message for debug purposes. 
+    NB: a unique msgno will be inserted into the cmd."""
     msgno = _get_msgno()
     cmd['msgno'] = msgno
     loop = asyncio.get_event_loop()
@@ -253,6 +253,9 @@ def send_message_sync(cmd):
     return res
     
 class RemoteChan:
+    """Proxy object for using a remote channel. 
+    Only supports simple read/write mechanics at the moment. 
+    """
     def __init__(self, name, host='127.0.0.1', port=8890):
         self.name = name
         self.host = host
@@ -278,7 +281,5 @@ class RemoteChan:
         }
         # TODO: check for poison
         return await _send_recv_cmd(cmd, msgno)
-        
-# todo: need to pick the reply from the server up from the queue and re-queue it in the _opqueue[msgid]  
 
     
