@@ -8,8 +8,8 @@ import asyncio
 loop = asyncio.get_event_loop()
 
 apycsp.net.setup_client()
-apycsp.net.send_message_sync({'cmd' : 'poo'})
-apycsp.net.send_message_sync({'cmd' : 'poo\nbar'})
+apycsp.net.send_message_sync({'op' : 'ping'})
+apycsp.net.send_message_sync({'op' : 'print', 'args' : 'foo\bar'})
 
 
 @apycsp.process

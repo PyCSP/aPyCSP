@@ -163,7 +163,16 @@ async def _handle_cmd(cmd, oqueue = None):
         else:
             res = await chan.write(cmd['msg'])
         await oqueue.put({'ack' : msgno, 'ret' : res, 'exc' : None})
-        return 
+        return
+
+    if op == 'ping':
+        await oqueue.put({'ack' : msgno, 'ret' : 'ack'})
+        return
+    
+    if op == 'print':
+        print("Server asked to print {}".format(cmd['args']))
+        await oqueue.put({'ack' : msgno, 'ret' : 'ack'})
+        return
     
     await oqueue.put({'ack' : msgno, 'err': f'command {op} not recognized'})
     print("handle done")
