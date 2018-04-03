@@ -7,8 +7,14 @@ import os
 import psutil
 import sys
 import time
+import argparse
 
-N_PROCS = 10 if len(sys.argv) < 2 else int(sys.argv[1])
+aparser = argparse.ArgumentParser()
+aparser.add_argument('np', type=int, help='number of procs', default=10, nargs="?")
+aparser.add_argument("-u", "--uvloop", help='use uvloop', action="store_const", const=True, default=False)
+args = aparser.parse_args()
+
+N_PROCS = args.np # 10 if len(sys.argv) < 2 else int(sys.argv[1])
 
 @process
 async def simple_proc(pid, checkin, cin):
@@ -50,5 +56,9 @@ def run_n_procs(n):
     print("{" + (f'"nprocs" : {n}, "t1" : {t1}, "t2" : {t2}, "t3" : {t3}, "tcr" : {tcr}, "trun" : {trun}, "rss" : {rss}') + "}")
 
 
-
+if args.uvloop:
+    print("Using uvloop")
+    import asyncio
+    import uvloop
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 run_n_procs(N_PROCS)
