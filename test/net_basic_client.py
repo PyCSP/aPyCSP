@@ -9,7 +9,7 @@ loop = asyncio.get_event_loop()
 
 apycsp.net.setup_client()
 apycsp.net.send_message_sync({'op' : 'ping'})
-apycsp.net.send_message_sync({'op' : 'print', 'args' : 'foo\bar'})
+apycsp.net.send_message_sync({'op' : 'print', 'args' : 'foo\nbar'})
 
 
 @apycsp.process
