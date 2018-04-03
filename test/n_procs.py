@@ -7,12 +7,11 @@ import os
 import psutil
 import sys
 import time
-import argparse
+import common
 
-aparser = argparse.ArgumentParser()
-aparser.add_argument('np', type=int, help='number of procs', default=10, nargs="?")
-aparser.add_argument("-u", "--uvloop", help='use uvloop', action="store_const", const=True, default=False)
-args = aparser.parse_args()
+args = common.handle_common_args([
+    (["np"], dict(type=int, help='number of procs', default=10, nargs="?"))
+    ])
 
 N_PROCS = args.np # 10 if len(sys.argv) < 2 else int(sys.argv[1])
 

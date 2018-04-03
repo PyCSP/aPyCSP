@@ -7,6 +7,8 @@ from common import *
 from apycsp import *
 from apycsp.plugNplay import *
 
+handle_common_args()
+
 @process
 async def PoisonTest(cout):
     for i in range(100):

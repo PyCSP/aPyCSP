@@ -6,6 +6,8 @@ from common import *
 from apycsp import *
 from apycsp.plugNplay import *
 
+handle_common_args()
+
 @process
 async def AltTest_p():
     sg1 = Skip()

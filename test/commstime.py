@@ -5,6 +5,8 @@ from apycsp import *
 from apycsp.plugNplay import *
 import os
 
+handle_common_args()
+
 @process
 async def consumer(cin):
     "Commstime consumer process"

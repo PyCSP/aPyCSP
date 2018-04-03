@@ -9,6 +9,8 @@ from apycsp import *
 from apycsp.plugNplay import *
 import time
 
+handle_common_args()
+
 N = 5
 
 @process

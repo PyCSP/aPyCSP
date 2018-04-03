@@ -5,16 +5,8 @@ import apycsp
 import apycsp.net
 import asyncio
 import time
-import argparse
 
-aparser = argparse.ArgumentParser()
-aparser.add_argument("-u", "--uvloop", help='use uvloop', action="store_const", const=True, default=False)
-args = aparser.parse_args()
-
-if args.uvloop:
-    print("Using uvloop as an event loop")
-    import uvloop
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+common.handle_common_args()
 
 loop = asyncio.get_event_loop()
 
