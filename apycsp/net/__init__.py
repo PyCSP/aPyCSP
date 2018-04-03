@@ -174,7 +174,7 @@ async def _handle_cmd(cmd, oqueue = None):
         await oqueue.put({'ack' : msgno, 'ret' : 'ack'})
         return
     
-    await oqueue.put({'ack' : msgno, 'err': f'command {op} not recognized'})
+    await oqueue.put({'ack' : msgno, 'ret': None, 'err': f'command {op} not recognized'})
     print("handle done")
     
 async def _client_handler(reader, writer):
@@ -249,7 +249,7 @@ async def _send_recv_cmd(cmd, msgno):
     res = await _opqueue[msgno].get()
     #print("cl got", res)
     del _opqueue[msgno]  # delete queue after command is finished
-    return res
+    return res['ret']
 
 def send_message_sync(cmd):
     """Synchronous send/recv of a message for debug purposes. 

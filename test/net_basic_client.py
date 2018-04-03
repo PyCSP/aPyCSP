@@ -4,6 +4,7 @@ import common
 import apycsp
 import apycsp.net
 import asyncio
+import time
 
 loop = asyncio.get_event_loop()
 
@@ -21,6 +22,50 @@ async def reader(ch):
 
 rchan = apycsp.net.RemoteChan('net_t1')
 
+print("Simple experiment")
 loop.run_until_complete(reader(rchan))
+
+def measure_rt(print_hdr=True):
+    if print_hdr:
+        print("\n--------------------------- ")
+        print("Measuring remote op roundtrip time")
+    N = 1000
+    t1 = time.time()
+    for i in range(N):
+        apycsp.net.send_message_sync({'op' : 'ping'})
+    t2 = time.time()
+    dt_ms = (t2-t1) * 1000
+    us_msg = 1000 * dt_ms / N
+    print(f"  - sending {N} messages took {dt_ms} ms")
+    print(f"  - us per message : {us_msg}")
+
+
+def measure_ch_read(print_hdr=True):
+    if print_hdr:
+        print("\n--------------------------- ")
+        print("Reading from remote channel")
+    @apycsp.process
+    async def reader(chname, N):
+        ch = apycsp.net.RemoteChan(chname)
+        tot = 0
+        for i in range(N):
+            v = await ch.read()
+            tot += v
+        print("Total", tot)
+
+    N = 1000
+    t1 = time.time()
+    loop.run_until_complete(reader('net_t2', N))
+    t2 = time.time()
+    dt_ms = (t2-t1) * 1000
+    us_msg = 1000 * dt_ms / N
+    print(f"  - read {N} messages took {dt_ms} ms")
+    print(f"  - us per message : {us_msg}")
+
+
+for i in range(5):
+    measure_rt(i==0)
+for i in range(5):
+    measure_ch_read(i==0)
 
 
