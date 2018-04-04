@@ -81,6 +81,7 @@ import apycsp
 import asyncio
 import json
 import functools
+from apycsp import ChannelPoisonException, Channel, ChannelEnd, ChannelInputEnd, ChannelOutputEnd
 
 # registry of channels to expose to the net. Keys are the names. 
 _chan_registry = {} 
@@ -153,16 +154,25 @@ async def _handle_cmd(cmd, oqueue = None):
 
     op = cmd.get('op', None)
     msgno = cmd['msgno']
-    if op in ['read', 'write']:
+    if op in ['read', 'write', 'poison']:
         name = cmd.get('name', None)
         chan = _chan_registry.get(name, None)
         #print("  -- ops is ", op)
-        if op == 'read':
-            #print(" -- trying to read")
-            res = await chan.read()
-        else:
-            res = await chan.write(cmd['msg'])
-        await oqueue.put({'ack' : msgno, 'ret' : res, 'exc' : None})
+        exc = None
+        res = None
+        try:
+            # attempt to read or write to a poisoned channel should throw poison 
+            if op == 'read':
+                #print(" -- trying to read")
+                res = await chan.read()
+            elif op == 'write':
+                res = await chan.write(cmd['msg'])
+            else:
+                res = await chan.poison()
+        except ChannelPoisonException:
+            exc = 'ChannelPoisonException'
+            print("Tried to run op on poisoned channel", op, chan.name)
+        await oqueue.put({'ack' : msgno, 'ret' : res, 'exc' : exc})
         return
 
     if op == 'ping':
@@ -251,7 +261,7 @@ def setup_client(host = '127.0.0.1', port=8890):
     loop = asyncio.get_event_loop()
     loop.run_until_complete(_setup_client(host, port, loop))
 
-async def _send_recv_cmd(cmd, msgno=-1):
+async def _send_recv_cmd(cmd, msgno=-1, throw_exception=True):
     """Sends a command to the remote end, and waits for and returns the result."""
     reader, writer, oqueue, rqueue = _clconn['def']  # TODO: should support multiple remotes.
     if msgno < 0:
@@ -265,6 +275,9 @@ async def _send_recv_cmd(cmd, msgno=-1):
     res = await _opqueue[msgno].get()
     #print("cl got", res)
     del _opqueue[msgno]  # delete queue after command is finished
+    if res.get('exc', None) == 'ChannelPoisonException':
+        print("propagating poison, ", cmd, res)
+        raise ChannelPoisonException()
     return res['ret']
 
 # NB: send_message_sync doesn't work when called from a coroutine already executed by the event loop.
@@ -283,20 +296,18 @@ def send_message_sync(cmd):
 
 async def get_channel_proxy(name):
     """Returns a remote channel. Use this from within a coroutine or aPyCSP process."""
-    ch = _RemoteChan(name)
+    ch = _RemoteChanProxy(name)
     await ch.setup_remote()
     return ch
 
 def get_channel_proxy_s(name):
     """Synchronous version when we want to create a proxy from outside a coroutine
     """
-    ch = _RemoteChan(name)
-    cr = ch.setup_remote()
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(cr)
-    return ch
+    return loop.run_until_complete(get_channel_proxy(name))
 
-class _RemoteChan:
+# Inherit from Channel and ChannelEnd to make sure poison propagation works locally as well. 
+class _RemoteChan(Channel):
     """Proxy object for using a remote channel. 
     Only supports simple read/write mechanics at the moment. 
     Don't allocate this one directly. Use the get_channel_proxy* functions instead.
@@ -304,7 +315,7 @@ class _RemoteChan:
     _rchan_reg = {} # class / shared list of known channels in a remote server
     
     def __init__(self, name):
-        self.name = name
+        super().__init__(name)
 
     async def setup_remote(self):
         # TODO: Not really used at the moment, this is the initial support for multiple remotes
@@ -326,25 +337,37 @@ class _RemoteChan:
                 self._rchan_reg[name] = clname
         
 
-    async def write(self, msg):
-        msgno = _get_msgno()
+    async def _write(self, msg):
         cmd = {
             'op' : 'write',
-            'msgno' : msgno, 
             'name'  : self.name,
             'msg'  : msg
         }
         # TODO: check for poison
-        return await _send_recv_cmd(cmd, msgno)
+        return await _send_recv_cmd(cmd)
     
-    async def read(self):
-        msgno = _get_msgno()
+    async def _read(self):
         cmd = {
             'op' : 'read',
-            'msgno' : msgno, 
             'name'  : self.name,
         }
         # TODO: check for poison
-        return await _send_recv_cmd(cmd, msgno)
+        return await _send_recv_cmd(cmd)
 
+    
+    async def poison(self):
+        # Make sure we poison both the local proxy and the remote channel
+        super().poison()
+        cmd = {
+            'op' : 'poison',
+            'name'  : self.name,
+        }
+        return await _send_recv_cmd(cmd)
+
+    
+class _RemoteChanProxy(_RemoteChan):
+    def __init__(self, name=None):
+        super().__init__(name)
+        self.read  = ChannelInputEnd(self)
+        self.write = ChannelOutputEnd(self)
     
