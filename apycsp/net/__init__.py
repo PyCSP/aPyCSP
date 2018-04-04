@@ -32,50 +32,11 @@ per-call queue. We could in principle do the same with a channel, but we have to
 sort out the poison semantics and potential overheads etc for this first. 
 
 
-Channel naming service is very simple at the moment: there is
-nothing. You have to know which server has a given channel you want to
-talk to. We should consider a naming service, or a protocol extension 
-that allows us to query a server for: 
-a) a list of channels on on that server
-b) if a channel exists on that server
-c) other servers it knows about, channels on other servers, etc...???? (TODO)
+Channel naming service is very simple at the moment: if we don't have an entry for a given channel name, 
+we query all servers for their list of current channels. Then, the channel name is looked up again. 
 
-
+TODO: We should consider a more sophisticated naming service. 
 """
-
-
-# Protocol so far:
-# {op : 'write', name: 'channame', 'msgno': msgno, 'msg' : msg}
-# => {'ack' : msgno, 'ret' : retval, 'exc' : exception info}
-#    the ack will only be sent when the operation has completed in the remote end and
-#    will contain info about return values and exceptions as l
-# {op : 'read', name: 'channame', 'msgno' : msgno}
-# => {'ack' : msgno, 'ret' : retval, 'exc' : exception info}
-#    returns the results of a read operation
-# 
-# It's the sender's responsibility to use unique message numbers for
-# each channel (and to decied if they need to be unique per channel or
-# across channels)
-#
-# Potential commands: 
-# {'op' : 'chanlist'} => {'ack' : [list of channel names]}
-# {'op' : 'has_chan'} => {'ack' : true or false}
-# 
-# TOSORT / TODO: 
-# use ordinary channels, but 'expose' them to the net system via an api (similar to old pycsp)
-# remtoe calls are just ordinary coroutines that call and put the return values/msgs on a queue
-#
-# on an incoming message:
-# - look up channel
-# - register call (for debug)
-# - create coroutines for call
-# - ensure_future (or something similar)
-#   - coroutine does the ordinary operation and queues the results (including exceptiont to enable poison propagation etc)
-# local end:
-# - ask net for a channel (end) proxy and use it as a normal channel. Buffered channels could be ALT-able with a snag.
-#
-# alt across the net _should_ be doable, but the performance would probably be bad, but how bad?
-
 
 import apycsp
 import asyncio
@@ -93,17 +54,17 @@ def register_channel(chan, name):
 
 #############################################################
 # 
-# Common handlers. We might consider creating PyCSP procs or channels here instead, but we have to
-# a) watch for poison (don't kill this channel because we were told to write on a poisoned channel), and
-# b) consider buffered channels (on the other hand, procs are cheap, so
-# procs waiting on a chan write effectively becomes a queue as well. 
+# Common handlers. We might consider creating PyCSP procs or channels
+# here instead, but we have to watch for poison (we need to capture
+# and forward it to the client instead of the default behaviour of
+# killing the process).
 #
-async def _queue_sender(queue, writer):
-    """Drains a queue for a given connection and writes the json strings to the 'writer'"""
+async def _stream_writer(writer, queue):
+    """Drains a queue for a given connection and writes the json strings to the 'writer' stream"""
     while True:
         msg = await queue.get()
         if msg == 'kill':
-            print("Got kill token in _queue_sender. Exiting")
+            print("Got kill token in _stream_writer. Exiting")
             break
         #print(f"Sending: {msg}")
         msg_s = json.dumps(msg) + "\n"
@@ -113,11 +74,11 @@ async def _queue_sender(queue, writer):
         res = writer.write(msg_s.encode())
         res2 = await writer.drain()
     writer.close()
-    print("_queue_sender done")
+    print("_stream_writer done")
 
     
 async def _stream_reader(reader, handler, wqueue = None):
-    """Reads lines from reader, converts from json strings to objects and runs a handler 
+    """Reads lines from the reader stream, converts from json strings to objects and runs a handler 
     for incoming messages. 
     """
     loop = asyncio.get_event_loop()
@@ -196,20 +157,19 @@ async def _handle_cmd(cmd, oqueue = None):
     print("handle done")
     
 async def _client_handler(reader, writer):
-    """Handler for a client connection. Reads messages and spawns coroutines to handle each message."""
+    """Handler for a client connection. Spawns coroutines to handle incoming and outgoing messages."""
     loop = asyncio.get_event_loop()
     oqueue = asyncio.Queue()
 
     print("_client_handler creating in/out handler for ", writer.get_extra_info('peername'))
-    res_writer   = _queue_sender(oqueue, writer)
+    res_writer   = _stream_writer(writer, oqueue)
     input_reader = _stream_reader(reader, functools.partial(_handle_cmd, oqueue=oqueue), oqueue)
 
     print("_client_handler now waiting for the handlers to complete")
     await asyncio.wait([res_writer, input_reader])
     print("_client handler finished\n")
-    # should probably try to cancel any remaining tasks
-    # add a close message on oqueue, or just let _res_writer notice that we're gone?
-    # how do we handle handle_cmd? they're already running, so cancel wouldn't work... 
+    # TODO: clean method for noticing a closed connection and notifying the handlers.
+    # see local notes. 
 
 
 def start_server(host_port="8890"):
@@ -276,7 +236,7 @@ async def _setup_client(host_port = '127.0.0.1:8890', loop=None):
     if 'def' not in _clconn:
         _clconn['def'] = conn  # Default is the first connection opened
 
-    loop.create_task(_queue_sender(conn.wqueue, writer))
+    loop.create_task(_stream_writer(writer, conn.wqueue))
     loop.create_task(_stream_reader(reader, conn.handler, conn.wqueue))
 
     
@@ -310,8 +270,7 @@ async def _send_recv_cmd(cmd, msgno=-1, throw_exception=True, conn=None):
 
 # NB: send_message_sync doesn't work when called from a coroutine already executed by the event loop.
 # The event loop is not "reentrant", so you can't provide something that has a "synchronous"
-# external interface and use it from an async function using the below method.
-# TODO: this means that we should probably expose the _send_recv_cmd as an async function to the outside.
+# external interface and use it from an async function using loop.run_until_complete(co)
 # We have a similar problem with initializing the RemoteChan object. The solution for now is to provide
 # both a synchronous and an asynchronous/couroutine version of get_channel_proxy instead of
 # allocating a RemoteChan object directly. 
@@ -347,12 +306,9 @@ class _RemoteChan(Channel):
     def __init__(self, name):
         super().__init__(name)
 
-        
+    # TODO: we could move this outside of the class now that we use a factory functions to create channels. 
     async def setup_remote(self):
-        # TODO: Not really used at the moment, this is the initial support for multiple remotes
-        # we may want to add an alias to the remote server when we set up a client connection as well. 
         self.conn = await self._find_remote()
-
         
     async def _find_remote(self):
         """Find a remote channel. """
@@ -360,15 +316,13 @@ class _RemoteChan(Channel):
         name = self.name
         if name in self._rchan_reg:
             return self._rchan_reg[name]
-        # we're not async-creating channels, so we need to use a sync version.
-        # TODO: this causes problems as channels cannot be created inside coroutines (loop.run_until_complete)
         for clname, conn in _clconn.items():
+            # TODO: the 'def' server gets asked twice 
             ret = await _send_recv_cmd({'op' : 'chanlist'}, conn=conn)
             print("Registering", ret, "as owned by", clname)
             for name in ret:
                 self._rchan_reg[name] = conn
         return self._rchan_reg[name]
-
     
     async def _write(self, msg):
         cmd = {
@@ -378,7 +332,6 @@ class _RemoteChan(Channel):
         }
         # TODO: check for poison
         return await _send_recv_cmd(cmd, conn=self.conn)
-
     
     async def _read(self):
         cmd = {
@@ -387,7 +340,6 @@ class _RemoteChan(Channel):
         }
         # TODO: check for poison
         return await _send_recv_cmd(cmd, conn=self.conn)
-
     
     async def poison(self):
         # Make sure we poison both the local proxy and the remote channel
