@@ -357,7 +357,7 @@ class _RemoteChan(Channel):
     
     async def poison(self):
         # Make sure we poison both the local proxy and the remote channel
-        super().poison()
+        await super().poison()
         cmd = {
             'op' : 'poison',
             'name'  : self.name,
