@@ -267,9 +267,13 @@ async def _send_recv_cmd(cmd, msgno=-1):
     del _opqueue[msgno]  # delete queue after command is finished
     return res['ret']
 
-# TODO: send_message_sync doesn't work when called from a coroutine already executed by the event loop.
+# NB: send_message_sync doesn't work when called from a coroutine already executed by the event loop.
 # The event loop is not "reentrant", so you can't provide something that has a "synchronous"
-# external interface and use it from an async function using the below method. 
+# external interface and use it from an async function using the below method.
+# TODO: this means that we should probably expose the _send_recv_cmd as an async function to the outside.
+# We have a similar problem with initializing the RemoteChan object. The solution for now is to provide
+# both a synchronous and an asynchronous/couroutine version of get_channel_proxy instead of
+# allocating a RemoteChan object directly. 
 def send_message_sync(cmd):
     """Synchronous send/recv of a message for debug purposes. 
     NB: a unique msgno will be inserted into the cmd."""
