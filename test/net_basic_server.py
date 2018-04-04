@@ -5,10 +5,13 @@ import apycsp
 import apycsp.net
 import asyncio
 
+args = common.handle_common_args([
+    (("-p", "--port"), dict(help="specify port number (alternatively host:port) to bind server to", action="store", default="8890"))
+])
 common.handle_common_args()
 
 loop = asyncio.get_event_loop()
-serv = apycsp.net.start_server()
+serv = apycsp.net.start_server(args.port)
 
 @apycsp.process
 async def writer(ch):

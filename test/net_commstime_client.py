@@ -7,11 +7,17 @@ from apycsp.plugNplay import *
 from apycsp import run_CSP
 import time
 
-common.handle_common_args()
+args = common.handle_common_args([
+    (("-s", "--serv"), dict(help="specify server as host:port (use multiple times for multiple servers)", action="append", default=[]))
+])
+if len(args.serv) < 1:
+    apycsp.net.setup_client()
+else:
+    for sp in args.serv:
+        apycsp.net.setup_client(sp)
 
 loop = asyncio.get_event_loop()
 
-apycsp.net.setup_client()
 
 @process
 async def consumer(cin):

@@ -7,10 +7,12 @@ from apycsp import One2OneChannel
 
 # Very simple server that only hosts the channels. The CSP processes run in the client(s)
 
-common.handle_common_args()
+args = common.handle_common_args([
+    (("-p", "--port"), dict(help="specify port number (alternatively host:port) to bind server to", action="store", default="8890"))
+])
 
 loop = asyncio.get_event_loop()
-serv = apycsp.net.start_server()
+serv = apycsp.net.start_server(args.port)
 
 def serve_test():
     chnames = ['a', 'b', 'c', 'd']
