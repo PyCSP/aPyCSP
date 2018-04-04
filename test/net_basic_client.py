@@ -22,7 +22,7 @@ async def reader(ch):
         ret = await ch.read()
         print(" - got message", ret)
 
-rchan = apycsp.net.RemoteChan('net_t1')
+rchan = apycsp.net.get_channel_proxy_s('net_t1')
 
 print("Simple experiment")
 loop.run_until_complete(reader(rchan))
@@ -57,7 +57,7 @@ def measure_ch_read(print_hdr=True):
 
     N = 1000
     t1 = time.time()
-    rchan = apycsp.net.RemoteChan('net_t2') 
+    rchan = apycsp.net.get_channel_proxy_s('net_t2') 
     loop.run_until_complete(reader(rchan, N))
     t2 = time.time()
     dt_ms = (t2-t1) * 1000

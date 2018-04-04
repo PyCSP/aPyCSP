@@ -251,9 +251,12 @@ def setup_client(host = '127.0.0.1', port=8890):
     loop = asyncio.get_event_loop()
     loop.run_until_complete(_setup_client(host, port, loop))
 
-async def _send_recv_cmd(cmd, msgno):
+async def _send_recv_cmd(cmd, msgno=-1):
     """Sends a command to the remote end, and waits for and returns the result."""
     reader, writer, oqueue, rqueue = _clconn['def']  # TODO: should support multiple remotes.
+    if msgno < 0:
+        msgno = _get_msgno()
+        cmd['msgno'] = msgno
     # first, get a input queue for that message
     _opqueue[msgno] = asyncio.Queue()
     #print("cl sending", cmd)
@@ -270,39 +273,53 @@ async def _send_recv_cmd(cmd, msgno):
 def send_message_sync(cmd):
     """Synchronous send/recv of a message for debug purposes. 
     NB: a unique msgno will be inserted into the cmd."""
-    msgno = _get_msgno()
-    cmd['msgno'] = msgno
     loop = asyncio.get_event_loop()
-    sender = _send_recv_cmd(cmd, msgno)
-    res = loop.run_until_complete(sender)
-    return res
-    
-class RemoteChan:
+    return loop.run_until_complete(_send_recv_cmd(cmd))
+
+
+async def get_channel_proxy(name):
+    """Returns a remote channel. Use this from within a coroutine or aPyCSP process."""
+    ch = _RemoteChan(name)
+    await ch.setup_remote()
+    return ch
+
+def get_channel_proxy_s(name):
+    """Synchronous version when we want to create a proxy from outside a coroutine
+    """
+    ch = _RemoteChan(name)
+    cr = ch.setup_remote()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(cr)
+    return ch
+
+class _RemoteChan:
     """Proxy object for using a remote channel. 
     Only supports simple read/write mechanics at the moment. 
+    Don't allocate this one directly. Use the get_channel_proxy* functions instead.
     """
     _rchan_reg = {} # class / shared list of known channels in a remote server
     
     def __init__(self, name):
         self.name = name
+
+    async def setup_remote(self):
         # TODO: Not really used at the moment, this is the initial support for multiple remotes
         # we may want to add an alias to the remote server when we set up a client connection as well. 
-        self.rconn = self._find_remote(name)
+        self.rconn = await self._find_remote()
 
-    def _find_remote(self, name):
+    async def _find_remote(self):
         """Find a remote channel. """
         # TODO: this fails if we allow remote channels to move, or if we reconnect to the remote server
+        name = self.name
         if name in self._rchan_reg:
             return self._rchan_reg[name]
         # we're not async-creating channels, so we need to use a sync version.
         # TODO: this causes problems as channels cannot be created inside coroutines (loop.run_until_complete)
         for clname, conn in _clconn.items():
-            ret = send_message_sync({'op' : 'chanlist'})
+            ret = await _send_recv_cmd({'op' : 'chanlist'})
             print("Registering", ret, "as owned by", clname)
             for name in ret:
                 self._rchan_reg[name] = clname
-
-        
         
 
     async def write(self, msg):
