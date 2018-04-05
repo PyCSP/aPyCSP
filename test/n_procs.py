@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: latin-1 -*-
 from common import *
-from apycsp import *
-from apycsp.plugNplay import *
+import apycsp 
 import os
 import psutil
 import sys
@@ -10,10 +9,19 @@ import time
 import common
 
 args = common.handle_common_args([
-    (["np"], dict(type=int, help='number of procs', default=10, nargs="?"))
+    (["np"], dict(type=int, help='number of procs', default=10, nargs="?")),
+    (('-b', '--base'), dict(help="use base implementation instead of altimpl", action="store_true", default=False))
     ])
 
 N_PROCS = args.np # 10 if len(sys.argv) < 2 else int(sys.argv[1])
+
+if args.base:
+    print("Using base impl")
+    from apycsp import One2OneChannel, Any2OneChannel, One2AnyChannel, process, run_CSP
+else:
+    print("Using altimpl")
+    from apycsp.altimpl import One2OneChannel, Any2OneChannel, One2AnyChannel, process, run_CSP
+
 
 @process
 async def simple_proc(pid, checkin, cin):
@@ -54,10 +62,4 @@ def run_n_procs(n):
     print("Running  tasks: {:15.3f} us  {:15.3f} ms  {:15.9f} s".format(1_000_000 * trun, 1000 * trun, trun))
     print("{" + (f'"nprocs" : {n}, "t1" : {t1}, "t2" : {t2}, "t3" : {t3}, "tcr" : {tcr}, "trun" : {trun}, "rss" : {rss}') + "}")
 
-
-if args.uvloop:
-    print("Using uvloop")
-    import asyncio
-    import uvloop
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 run_n_procs(N_PROCS)

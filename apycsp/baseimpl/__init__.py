@@ -7,6 +7,7 @@ Copyright (c) 2018 John Markus Bjørndalen, jmb@cs.uit.no.
 See LICENSE.txt for licensing details (MIT License). 
 """
 
-# Use the base implementation still
-if 1:
-    from .baseimpl import *
+from .Guards import *
+from .Channels import *
+from .BarrierImpl import Barrier
+from .CoreImpl import * 
