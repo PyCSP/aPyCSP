@@ -193,7 +193,9 @@ def start_server(host_port="8890"):
 #
 
 _clconn = {}
-_opqueue = {} # waiting for inputs
+_opqueue = {} # waiting for inputs. TODO: we should be able to just use futures instead of queues here as we only transmit one item once.
+OPQ_USE_FUT = False # True # Use future instead of asyncio.Queue() for the per-op replies
+OPQ_USE_FUT = True
 
 _msgno = 0 
 def _get_msgno():
@@ -222,8 +224,11 @@ class _ClientConn():
             print("Got keyerror for received message", cmd)
             print("  - keys ", _opqueue.keys())
             print("  -", e)
-            raise 
-        await rq.put(cmd)
+            raise
+        if OPQ_USE_FUT:
+            rq.set_result(cmd)
+        else:
+            await rq.put(cmd)
         #await rqueue.put(cmd) # global receive queue
         
 
@@ -246,20 +251,28 @@ def setup_client(host_port='127.0.0.1:8890'):
     loop.run_until_complete(_setup_client(host_port, loop))
 
   
-async def _send_recv_cmd(cmd, msgno=-1, throw_exception=True, conn=None):
+async def _send_recv_cmd(cmd, msgno=-1, throw_exception=True, conn=None, loop=None):
     """Sends a command to the remote end, and waits for and returns the result."""
+    if loop == None:
+        loop = asyncio.get_event_loop()
     if conn == None:
         conn = _clconn['def']  # Use default if not specified
     if msgno < 0:
         msgno = _get_msgno()
         cmd['msgno'] = msgno
-    # first, get a input queue for that message
-    rq = asyncio.Queue()
+    # first, get a input "queue" for that message. We only need a future for this as only one message will be delivered.
+    if OPQ_USE_FUT:
+        rq = loop.create_future()
+    else:
+        rq = asyncio.Queue()
     _opqueue[msgno] = rq
     #print("cl sending", cmd)
     await conn.wqueue.put(cmd)
     #print("cl sent, now waiting")
-    res = await rq.get()
+    if OPQ_USE_FUT:
+        res = await rq
+    else:
+        res = await rq.get()
     #print("cl got", res)
     del _opqueue[msgno]  # delete queue after command is finished
     if res.get('exc', None) == 'ChannelPoisonException':
@@ -303,8 +316,9 @@ class _RemoteChan(Channel):
     """
     _rchan_reg = {} # class / shared list of known channels in a remote server
     
-    def __init__(self, name):
+    def __init__(self, name, loop):
         super().__init__(name)
+        self._loop = loop
 
     # TODO: we could move this outside of the class now that we use a factory functions to create channels. 
     async def setup_remote(self):
@@ -331,7 +345,7 @@ class _RemoteChan(Channel):
             'msg'  : msg
         }
         # TODO: check for poison
-        return await _send_recv_cmd(cmd, conn=self.conn)
+        return await _send_recv_cmd(cmd, conn=self.conn, loop=self._loop)
     
     async def _read(self):
         cmd = {
@@ -339,7 +353,7 @@ class _RemoteChan(Channel):
             'name'  : self.name,
         }
         # TODO: check for poison
-        return await _send_recv_cmd(cmd, conn=self.conn)
+        return await _send_recv_cmd(cmd, conn=self.conn, loop=self._loop)
     
     async def poison(self):
         # Make sure we poison both the local proxy and the remote channel
@@ -348,12 +362,14 @@ class _RemoteChan(Channel):
             'op' : 'poison',
             'name'  : self.name,
         }
-        return await _send_recv_cmd(cmd, conn=self.conn)
+        return await _send_recv_cmd(cmd, conn=self.conn, loop=self._loop)
 
     
 class _RemoteChanProxy(_RemoteChan):
-    def __init__(self, name=None):
-        super().__init__(name)
+    def __init__(self, name=None, loop=None):
+        if loop == None:
+            loop = asyncio.get_event_loop()
+        super().__init__(name, loop)
         self.read  = ChannelInputEnd(self)
         self.write = ChannelOutputEnd(self)
     
