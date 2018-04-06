@@ -276,6 +276,10 @@ class Channel:
     def idisable(self, alt):
         # Need to remove the ALT from the reader queue
         # TODO: this is inefficient, but should be ok for now.
+        # a slightly faster alternative might be to store a reference to the cmd in a dict
+        # with the alt as key, and then use deque.remove(cmd).
+        # an alt may have multiple channels, and a guard may be used by multiple alts, so
+        # there is no easy place for a single cmd to be stored in either. 
         oldq = self.rqueue
         self.rqueue = collections.deque()
         for cmd in oldq: 
@@ -293,7 +297,6 @@ async def poisonChannel(ch):
     await ch.poison()
     
 
-    
 # ******************** Guards and ALT ********************
 
 # don't let anything yield while runnning enable, disable priselect.
