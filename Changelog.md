@@ -29,5 +29,10 @@
      The ChannelEnds also add a slight overhead that we could 
      consider removing later. 
 
+2018-04-05 15:45
+     Initial channel poison mechanism implemented. 
+     n_procs runs about twice as fast with the altimpl version as with the 
+     baseimpl. TODO: rename altimpl to avoid confusion with ALT. 
+
 
  
