@@ -164,7 +164,7 @@ class ChannelEnd(object):
 
 class PendingChanWriteGuard(Guard):
     def __init__(self, chan, obj):
-        self.chan = obj
+        self.chan = chan
         self.obj = obj
     def enable(self, alt):
         return self.chan.wenable(alt, self)
@@ -173,7 +173,7 @@ class PendingChanWriteGuard(Guard):
         # same alt uses multiple read guards on the same channel in
         # one select call? on the other hand, disable should  work
         # even if we call it multiple times with the same alt.
-        return self.chan.wdisable(alt, self)  
+        return self.chan.wdisable(alt)  
     
 class ChannelOutputEnd(ChannelEnd):
     def __init__(self, chan):
@@ -195,7 +195,7 @@ class ChannelOutputEnd(ChannelEnd):
         """Returns a pending write guard object that will only write if this guard is selected by the ALT
         TODO: the returned guard should be safe to re-use in a loop that calls ALT. 
         """
-        return PendingChanWriteGuard(self.chan, obj)
+        return PendingChanWriteGuard(self._chan, obj)
 
 class ChannelInputEnd(ChannelEnd, Guard):
     def __init__(self, chan):
@@ -373,7 +373,7 @@ class Channel:
         if len(self.wqueue) > 0 or len(self.rqueue) == 0:
             # can't execute the write directly, so we queue the write guard
             wcmd = ChanCMD('ALT', pguard.obj, alt=alt)
-            wcmd.pguard = pguard
+            wcmd.wguard = pguard
             self.wqueue.append(wcmd)
             return (False, None)
         wcmd = ChanCMD('write', pguard.obj) # make sure it's treated as a write without a sleeping future
