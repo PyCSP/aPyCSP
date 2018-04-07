@@ -141,16 +141,9 @@ class Timer(Guard):
 
 class ChannelEnd(object):
     """The channel ends are objects that replace the Channel read()
-    and write() methods, and adds methods for forwarding poison()
-    and pending() calls. 
-
-    NB: read() and write() are not forwarded! That could allow the
-    channel ends to be confused with proper channels, which would
-    defeat the purpose of the channel ends.
-    
-    Also, ALT is not supported by default (no enable() or disable()).
-    You need the Guard version of the ChannelEnd to do that (see
-    ChannelInputEndGuard)."""
+    and write() methods, and adds methods for forwarding poison() calls. 
+    Specific read/write channel ends are used for implementing ALT 
+    semantics for the channel ends. """
     def __init__(self, chan):
         self._chan = chan
     def channel(self):
@@ -163,41 +156,37 @@ class ChannelEnd(object):
         return self._chan.pending()
 
 class PendingChanWriteGuard(Guard):
+    """Used to store a pending write that will only be executed if 
+    the this particular guard is ready to be executed and is selected. 
+    """
     def __init__(self, chan, obj):
         self.chan = chan
         self.obj = obj
     def enable(self, alt):
         return self.chan.wenable(alt, self)
     def disable(self, alt):
-        # NB: we should perhaps do the same with read alts in case the
-        # same alt uses multiple read guards on the same channel in
-        # one select call? on the other hand, disable should  work
-        # even if we call it multiple times with the same alt.
         return self.chan.wdisable(alt)  
-    
-class ChannelOutputEnd(ChannelEnd):
+
+# The output channel end cannot be used as a guard directly as we need to
+# implement a lazy write that is only executed when this particular write
+# is ready to execute (a matching read or read-alt is found) and selected.
+# The user instead calls alt_pending_write(obj) on the write end to get
+# a PendingChanWriteGuard which can be used to represent the write operation
+# in the guard. 
+class ChannelWriteEnd(ChannelEnd):
     def __init__(self, chan):
         ChannelEnd.__init__(self, chan)
     async def __call__(self, val):
         return await self._chan._write(val)
     def __repr__(self):
-        return "<ChannelOutputEnd wrapping %s>" % self._chan
-    
-    # TODO: for a write guard, we would need to make a 'guarded write'
-    # operation which only succeeds if the guard is selected.  Two
-    # ways out: capture the value in another object, or provide
-    # optional values to guards when they are used in alts. This could
-    # mean that timeout guards could get new timeout values, chan
-    # writes get passed new values every time we use ALT etc. This is
-    # only safe as long as we guarrantee that only one output guard
-    # will succeed, which is possible with the current implemntation.
+        return "<ChannelWriteEnd wrapping %s>" % self._chan
     def alt_pending_write(self, obj):
-        """Returns a pending write guard object that will only write if this guard is selected by the ALT
-        TODO: the returned guard should be safe to re-use in a loop that calls ALT. 
+        """Returns a pending write guard object that will only write if this guard 
+        is selected by the ALT
         """
         return PendingChanWriteGuard(self._chan, obj)
 
-class ChannelInputEnd(ChannelEnd, Guard):
+class ChannelReadEnd(ChannelEnd, Guard):
     def __init__(self, chan):
         Guard.__init__(self)
         ChannelEnd.__init__(self, chan)
@@ -208,7 +197,7 @@ class ChannelInputEnd(ChannelEnd, Guard):
     def disable(self, alt):
         return self._chan.rdisable(alt)
     def __repr__(self):
-        return "<ChannelInputEnd wrapping %s>" % self._chan
+        return "<ChannelReadEnd wrapping %s>" % self._chan
 
 class ChanCMD:
     def __init__(self, cmd, obj, alt = None):
@@ -219,6 +208,10 @@ class ChanCMD:
     
 # This is a generic channel object, 
 class Channel:
+    """CSP Channels for aPyCSP. This is a generic channel that can be used with multiple readers
+    and writers. The channel ends also supports being used as read guards (read ends) and for 
+    creating lazy/pending writes that be submitted as write guards in an ALT. 
+    """
     def __init__(self, name="", loop=None):
         if loop == None:
             loop = asyncio.get_event_loop()
@@ -227,8 +220,8 @@ class Channel:
         self.poisoned = False
         self.wqueue = collections.deque()  
         self.rqueue = collections.deque() # could also contain "ALT" ops.
-        self.read = ChannelInputEnd(self)
-        self.write = ChannelOutputEnd(self)
+        self.read = ChannelReadEnd(self)
+        self.write = ChannelWriteEnd(self)
 
     def _wait_for_op(self, queue, op):
         """Used when we need to queue an operation and wait for its completion. 
@@ -241,21 +234,20 @@ class Channel:
         return fut
 
     def _rw_nowait(self, wcmd, rcmd):
-        """Excecute a 'read/write' and wakes up any futures. Returns the return value for (write, read)"""
+        """Excecute a 'read/write' and wakes up any futures. Returns the return value for (write, read). 
+        NB: a _read ALT calling _rw_nowait should represent its own command as a normal 'read' instead
+        of an ALT to avoid having an extra schedule() called on it. The same goes for a _write op. 
+        """
         obj = wcmd.obj
         if wcmd.fut:
             wcmd.fut.set_result(0)
         if rcmd.fut:
             rcmd.fut.set_result(obj)
-        # This should work even if both ends are ALT commands as the end that triggers the actual
-        # command pretends to be a normal read or write operation. The other end just gets
-        # a "schedule" called. 
         if wcmd.cmd == 'ALT':
-            # if the wcmd is an ALT, handle the alt semantics.
+            # Handle the alt semantics for a sleeping write ALT. 
             wcmd.alt.schedule(wcmd.wguard, 0)
         if rcmd.cmd == 'ALT':
-            # If the rcmd is an ALT, we should run alt.schedule(self.read, obj).
-            # This should only happen if we're called by '_write'
+            # Handle the alt semantics for a sleeping read ALT. 
             rcmd.alt.schedule(self.read, obj)
         return (0, obj)
 
@@ -314,21 +306,33 @@ class Channel:
                     raise ChannelPoisonException()
 
     async def poison(self):
+        """Poison a channel and wake up all ops in the queues so they can catch the poison."""
         # TODO: this doesn't need to be an async method any longer, but we keep it like this
         # to make the interface compatible with the baseimpl.
         if self.poisoned:
             return
         self.poisoned = True
-        #self.rwMonitor.notify_all()
-        #if self._ialt:
-        #    # also wake up any input guards.
-        #    await self._ialt.schedule()
         def poison_queue(queue):
             while len(queue) > 0:
                 op = queue.popleft()
-                op[-1].set_result(None)
+                if op.fut:
+                    op.fut.set_result(None)
         poison_queue(self.wqueue)
         poison_queue(self.rqueue)        
+
+
+    def _remove_alt_from_pqueue(self, queue, alt):
+        """Common method to remove an alt from the read or write queue"""
+        # TODO: this is inefficient, but should be ok for now.
+        # a slightly faster alternative might be to store a reference to the cmd in a dict
+        # with the alt as key, and then use deque.remove(cmd).
+        # an alt may have multiple channels, and a guard may be used by multiple alts, so
+        # there is no easy place for a single cmd to be stored in either. 
+        nqueue = collections.deque()
+        for cmd in queue:
+            if not (cmd.cmd == 'ALT' and cmd.alt == alt):
+                nqueue.append(cmd)
+        return nqueue
 
     # TODO: read and write alts needs poison check. 
     def renable(self, alt):
@@ -346,19 +350,6 @@ class Channel:
         wcmd = self.wqueue.popleft()
         ret = self._rw_nowait(wcmd, rcmd)[1]
         return (True, ret)
-
-    def _remove_alt_from_pqueue(self, queue, alt):
-        """Common method to remove an alt from the read or write queue"""
-        # TODO: this is inefficient, but should be ok for now.
-        # a slightly faster alternative might be to store a reference to the cmd in a dict
-        # with the alt as key, and then use deque.remove(cmd).
-        # an alt may have multiple channels, and a guard may be used by multiple alts, so
-        # there is no easy place for a single cmd to be stored in either. 
-        nqueue = collections.deque()
-        for cmd in queue:
-            if not (cmd.cmd == 'ALT' and cmd.alt == alt):
-                nqueue.append(cmd)
-        return nqueue
     
     def rdisable(self, alt):
         """Removes the ALT from the reader queue"""
