@@ -97,10 +97,10 @@ def Spawn(proc):
     return loop.create_task(proc)
 
 # ******************** Base guards (channel ends should inherit from a Guard) ********************
-
+# 
 # don't let anything yield while runnning enable, disable priselect.
-# NB: what would not let us run remote ALTs... but the basecode cannot do this anyway (there is no callback for schedule().
-# NB: disable now takes the alt to disable in case we support multiple alts on a channel read end, for instance.
+# NB: what would not let us run remote ALTs... but the basecode cannot do this anyway (there is no callback for schedule()).
+
 class Guard(object):
     # JCSPSRC/src/com/quickstone/jcsp/lang/Guard.java
     def enable(self, alt):
@@ -204,9 +204,9 @@ class ChannelInputEnd(ChannelEnd, Guard):
     async def __call__(self):
         return await self._chan._read()
     def enable(self, alt):
-        return self._chan.ienable(alt)
+        return self._chan.renable(alt)
     def disable(self, alt):
-        return self._chan.idisable(alt)
+        return self._chan.rdisable(alt)
     def __repr__(self):
         return "<ChannelInputEnd wrapping %s>" % self._chan
 
@@ -313,7 +313,6 @@ class Channel:
                 if self.poisoned:
                     raise ChannelPoisonException()
 
-                
     async def poison(self):
         # TODO: this doesn't need to be an async method any longer, but we keep it like this
         # to make the interface compatible with the baseimpl.
@@ -329,13 +328,10 @@ class Channel:
                 op = queue.popleft()
                 op[-1].set_result(None)
         poison_queue(self.wqueue)
-        poison_queue(self.rqueue)
-        
-    # alt:
-    # - the enable should just enter the ALT in a read queue
-    # - disabling/cancelling: just remove the ALT from the read queue
-    # TODO: needs poison check. 
-    def ienable(self, alt):
+        poison_queue(self.rqueue)        
+
+    # TODO: read and write alts needs poison check. 
+    def renable(self, alt):
         """enable for the input/read end"""
         if len(self.rqueue) > 0 or len(self.wqueue) == 0:
             # reader ahead of us or no writers
@@ -352,6 +348,7 @@ class Channel:
         return (True, ret)
 
     def _remove_alt_from_pqueue(self, queue, alt):
+        """Common method to remove an alt from the read or write queue"""
         # TODO: this is inefficient, but should be ok for now.
         # a slightly faster alternative might be to store a reference to the cmd in a dict
         # with the alt as key, and then use deque.remove(cmd).
@@ -363,11 +360,10 @@ class Channel:
                 nqueue.append(cmd)
         return nqueue
     
-    def idisable(self, alt):
-        # Need to remove the ALT from the reader queue
+    def rdisable(self, alt):
+        """Removes the ALT from the reader queue"""
         self.rqueue = self._remove_alt_from_pqueue(self.rqueue, alt)
 
-    # TODO: alt on a poisoned channel should trigger poison... ? 
     def wenable(self, alt, pguard):
         """enable write guard"""
         if len(self.wqueue) > 0 or len(self.rqueue) == 0:
@@ -382,7 +378,7 @@ class Channel:
         return (True, ret)
         
     def wdisable(self, alt):
-        # see comments for wdisable. TODO: different offsets. We should perhaps use an object with named attrs instead. 
+        """Removes the ALT from the writer queue"""
         self.wqueue = self._remove_alt_from_pqueue(self.wqueue, alt)
         
         

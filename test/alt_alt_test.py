@@ -47,6 +47,7 @@ async def alt_writer(cout):
         alt = Alternative(g)
         ret = await alt.select()
         print(" -- alt_writer done, got ", ret)
+        print(" ** ch queues : ", cout._chan.rqueue, cout._chan.wqueue)
         
         
 @process    
