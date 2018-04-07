@@ -28,7 +28,7 @@ async def writer(N, cout):
 async def reader_verb(N, cin):
     for i in range(N):
         v = await cin()
-        print(v)
+        print(v, end=" ")
         
 async def reader(N, cin):
     for i in range(N):
@@ -38,16 +38,27 @@ N = 10
 c = Channel('a')
 run_CSP(writer(N, c.write),
         reader_verb(N, c.read))
-
+print("timing with channel ends")
 for i in range(5):
     N = 1000
-    print(f"Run {i}:")
+    print(f"Run {i}:", end="")
     t1 = time.time()
     run_CSP(writer(N, c.write),
             reader(N, c.read))
     t2 = time.time()
     dt_ms    = (t2-t1) * 1000
     dt_op_us = (dt_ms / N) * 1000
-    print(f"  DT    = {dt_ms} ms")
-    print(f"  DT/op = {dt_op_us} us")
+    print(f"  DT    = {dt_ms:8.3f} ms  per op: {dt_op_us:8.3f} us")
 
+print("timing with _read and _write directly")
+for i in range(5):
+    N = 1000
+    print(f"Run {i}:", end="")
+    t1 = time.time()
+    run_CSP(writer(N, c._write),
+            reader(N, c._read))
+    t2 = time.time()
+    dt_ms    = (t2-t1) * 1000
+    dt_op_us = (dt_ms / N) * 1000
+    print(f"  DT    = {dt_ms:8.3f} ms  per op: {dt_op_us:8.3f} us")
+    

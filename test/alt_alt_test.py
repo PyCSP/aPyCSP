@@ -21,7 +21,7 @@ async def p1(cin):
     print("Bip 1")
     alt = Alternative(cin)
     for i in range(10):
-        print("ding 1")
+        print(f"ding {i}")
         g, ret = await alt.select()
         print("p1: got from select:", ret, type(ret))
 
