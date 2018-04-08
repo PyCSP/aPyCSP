@@ -11,7 +11,7 @@ handle_common_args()
 async def AltTest_p():
     sg1 = Skip()
     sg2 = Skip()
-    ch = Channel()
+    ch = Channel('p')
     alt = Alternative(sg1, sg2, ch.read)
     ret = await alt.select()
     print("Returned from alt.select():", ret)
@@ -61,17 +61,17 @@ def AltTest():
     run_CSP(AltTest_p())
     
 def AltTest2():
-    c = Channel()
+    c = Channel('ch2')
     run_CSP(p1(c.read),
             p2(c.write))
     
 def AltTest3():
-    c = Channel()
+    c = Channel('ch3')
     run_CSP(p1_b(c.read),
             p2(c.write))
 
 def AltTest4():
-    c = Channel()
+    c = Channel('ch4')
     run_CSP(alt_writer(c.write),
             p1(c.read))
 

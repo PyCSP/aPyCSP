@@ -1,37 +1,48 @@
 #!/usr/bin/env python3
-"""
-Experimental implementation of the "VM" / CSP OP / opqueue concept. 
+"""Experimental implementation of the "VM" / CSP OP / opqueue concept. 
 
-Instead of a complicated set of thread-like coroutines, we simplify the implementation by taking advantage of two things: 
+Instead of a complicated set of thread-like coroutines, we simplify
+the implementation by taking advantage of two things:
 
-a) we queue operations on channels as opcodes + data (and potentially futures that can be set when completing) 
-b) we take advantage of cooperative multitasking, executing without locks and knowing that we 
-   will not be preempted. 
+a) we queue operations on channels as opcodes + data (and potentially
+   futures that can be set when completing)
 
-The channel and ALT implementations could then be implemented in a less convoluted manner, should be easier to reason about and understand, and it turns out the channels and processes are significantly faster and use less memory than the other implementation. We can also support multiple readers using ALT on the same channel. It should be possible to use a similar trick to implement ALT for writing on the channel as well. 
+b) we take advantage of cooperative multitasking, executing without
+   locks and knowing that we will not be preempted.
+
+The channel and ALT implementations could then be implemented in a
+less convoluted manner, should be easier to reason about and
+understand, and it turns out the channels and processes are
+significantly faster and use less memory than the other
+implementation. We can also support multiple readers using ALT on the
+same channel. It should be possible to use a similar trick to
+implement ALT for writing on the channel as well.
 
 We do have to change the semantics slightly though: 
-- enable and disable need to be synchronous calls that cannot yield. 
-  They can, however, create couroutines and enter them in the event loop as well as 
-  setting the results of futures. 
-- disable no longer checks for ready guards, it's strickly for unrollig registration 
-  of the ALT on the guards. 
-- when a 'ready' condition is found, the channel end / guard is responsible for 
-  immediately executing the action and returning the result as well as the ready 
-  state. This can happen in enable(), but also in timers etc. 
 
-This simplifies another aspect: only one guard can become active at the same time as we 
-enforce resolving and immediately unrolling when we notice the first ready guard. 
+- enable and disable need to be synchronous calls that cannot yield.
+  They can, however, create couroutines and enter them in the event
+  loop as well as setting the results of futures.
 
-TODO: more detailt descriptions later. 
+- disable no longer checks for ready guards, it's strickly for
+  unrollig registration of the ALT on the guards.
 
+- when a 'ready' condition is found, the channel end / guard is
+  responsible for immediately executing the action and returning the
+  result as well as the ready state. This can happen in enable(), but
+  also in timers etc.
+
+This simplifies another aspect: only one guard can become active at
+the same time as we enforce resolving and immediately unrolling when
+we notice the first ready guard.
+
+TODO: more detailt descriptions later.
 """
 
 import asyncio
 import collections
 import functools
 import inspect
-
 
 
 # ******************** Core code ********************
@@ -53,10 +64,12 @@ def process(func):
 
 def chan_poisoncheck(func):
     "Decorator for making sure that poisoned channels raise exceptions"
-    # We just need to make sure we can correctly decorate both coroutines and ordinary methods and functions.
-    # NB: we need to await here instead of optimizing the await away using a normal def for p_wrap as we need
-    # to check for exceptions here. If we just create a coroutine and return it directly, we will fail to
-    # catch exceptions. 
+    # We just need to make sure we can correctly decorate both
+    # coroutines and ordinary methods and functions.  NB: we need to
+    # await here instead of optimizing the await away using a normal
+    # def for p_wrap as we need to check for exceptions here. If we
+    # just create a coroutine and return it directly, we will fail to
+    # catch exceptions.
     @functools.wraps(func)
     async def p_wrap(self, *args, **kwargs):
         if self.poisoned:
@@ -99,7 +112,8 @@ def Spawn(proc):
 # ******************** Base guards (channel ends should inherit from a Guard) ********************
 # 
 # don't let anything yield while runnning enable, disable priselect.
-# NB: what would not let us run remote ALTs... but the basecode cannot do this anyway (there is no callback for schedule()).
+# NB: what would not let us run remote ALTs... but the basecode cannot
+# do this anyway (there is no callback for schedule()).
 
 class Guard(object):
     # JCSPSRC/src/com/quickstone/jcsp/lang/Guard.java
@@ -149,11 +163,8 @@ class ChannelEnd(object):
     def channel(self):
         "Returns the channel that this channel end belongs to."
         return self._chan
-    # simply pass on most calls to the channel by default
     async def poison(self):
         return await self._chan.poison()
-    def pending(self):
-        return self._chan.pending()
 
 class PendingChanWriteGuard(Guard):
     """Used to store a pending write that will only be executed if 
@@ -165,15 +176,17 @@ class PendingChanWriteGuard(Guard):
     def enable(self, alt):
         return self.chan.wenable(alt, self)
     def disable(self, alt):
-        return self.chan.wdisable(alt)  
+        return self.chan.wdisable(alt)
+    def __repr__(self):
+        return f"<PendingChanWriteGuard for {self.chan.name}>"
 
-# The output channel end cannot be used as a guard directly as we need to
-# implement a lazy write that is only executed when this particular write
-# is ready to execute (a matching read or read-alt is found) and selected.
-# The user instead calls alt_pending_write(obj) on the write end to get
-# a PendingChanWriteGuard which can be used to represent the write operation
-# in the guard. 
 class ChannelWriteEnd(ChannelEnd):
+    """Write end of a Channel. This end cannot be used directly as a Guard as
+    we need to implement a lazy/pending write that is only executed if the 
+    write guards is selected in the ALT. The current solution is to 
+    call ch.write.alt_pending_write(value) to get a PendingChanWriteGuard
+    which is used as a write guard and will execute the write if selected. 
+    """
     def __init__(self, chan):
         ChannelEnd.__init__(self, chan)
     async def __call__(self, val):
@@ -199,14 +212,24 @@ class ChannelReadEnd(ChannelEnd, Guard):
     def __repr__(self):
         return "<ChannelReadEnd wrapping %s>" % self._chan
 
-class ChanCMD:
+class _ChanOP:
+    """Used to store channel cmd/ops for the op queues"""
     def __init__(self, cmd, obj, alt = None):
         self.cmd = cmd
         self.obj = obj
         self.fut = None # future is used for commands that have to wait
         self.alt = alt
+    def __repr__(self):
+        return f"<_ChanOP: {self.cmd}>"
     
-# This is a generic channel object, 
+# TODO: this implementation could implement buffered channels with a simple twist:
+# - the condition for suspending a write could be modified such that a
+#   write will succeed even if multiple writes are already queued up.
+# - ALT writes should be considered as successful and transformed into normal
+#   writes if there is room in the buffer, otherwise, we will have to
+#   consider them again when there is room. 
+# - when write ops are retired, we need to consdier waking up alts and writes
+#   that are sleeping on a write
 class Channel:
     """CSP Channels for aPyCSP. This is a generic channel that can be used with multiple readers
     and writers. The channel ends also supports being used as read guards (read ends) and for 
@@ -234,9 +257,12 @@ class Channel:
         return fut
 
     def _rw_nowait(self, wcmd, rcmd):
-        """Excecute a 'read/write' and wakes up any futures. Returns the return value for (write, read). 
-        NB: a _read ALT calling _rw_nowait should represent its own command as a normal 'read' instead
-        of an ALT to avoid having an extra schedule() called on it. The same goes for a _write op. 
+        """Excecute a 'read/write' and wakes up any futures. Returns the
+        return value for (write, read).  
+         NB: a _read ALT calling _rw_nowait should represent its own
+        command as a normal 'read' instead of an ALT to avoid having
+        an extra schedule() called on it. The same goes for a _write
+        op.
         """
         obj = wcmd.obj
         if wcmd.fut:
@@ -255,7 +281,7 @@ class Channel:
         # TODO: adding this decorator adds about a microsecond to the op time... Can we improve it? 
         @chan_poisoncheck
         async def _write(self, obj):
-            wcmd = ChanCMD('write', obj)
+            wcmd = _ChanOP('write', obj)
             if len(self.wqueue) > 0 or len(self.rqueue) == 0:
                 # a) somebody else is already waiting to write, so we're not going to
                 #    change the situation any with this write. simply append ourselves and wait
@@ -268,7 +294,7 @@ class Channel:
         
         @chan_poisoncheck
         async def _read(self):
-            rcmd = ChanCMD('read', None)
+            rcmd = _ChanOP('read', None)
             if len(self.rqueue) > 0 or len(self.wqueue) == 0:
                 # readers ahead of us, or no writiers
                 return await self._wait_for_op(self.rqueue, rcmd)
@@ -281,7 +307,7 @@ class Channel:
             if self.poisoned:
                 raise ChannelPoisonException()
             try:
-                wcmd = ChanCMD('write', obj)
+                wcmd = _ChanOP('write', obj)
                 if len(self.wqueue) > 0 or len(self.rqueue) == 0:
                     return await self._wait_for_op(self.wqueue, wcmd)
                 rcmd = self.rqueue.popleft()
@@ -294,7 +320,7 @@ class Channel:
             if self.poisoned:
                 raise ChannelPoisonException()
             try:
-                rcmd = ChanCMD('read', None)
+                rcmd = _ChanOP('read', None)
                 if len(self.rqueue) > 0 or len(self.wqueue) == 0:
                     # readers ahead of us, or no writiers
                     return await self._wait_for_op(self.rqueue, rcmd)
@@ -329,9 +355,9 @@ class Channel:
         # an alt may have multiple channels, and a guard may be used by multiple alts, so
         # there is no easy place for a single cmd to be stored in either. 
         nqueue = collections.deque()
-        for cmd in queue:
-            if not (cmd.cmd == 'ALT' and cmd.alt == alt):
-                nqueue.append(cmd)
+        for op in queue:
+            if not (op.cmd == 'ALT' and op.alt == alt):
+                nqueue.append(op)
         return nqueue
 
     # TODO: read and write alts needs poison check. 
@@ -341,12 +367,13 @@ class Channel:
             # reader ahead of us or no writers
             # The code is similar to _read(), and we
             # need to enter the ALT as a potential reader
-            rcmd = ChanCMD('ALT', None, alt=alt)
+            rcmd = _ChanOP('ALT', None, alt=alt)
             self.rqueue.append(rcmd)
             return (False, None)
         # we have a waiting writer that we can match up with, so we execute the read and return
         # the  read value as well as True for the guard.
-        rcmd = ChanCMD('read', None) # make sure it's treated as a read to avoid having rw_nowait trying to call schedule
+        # make sure it's treated as a read to avoid having rw_nowait trying to call schedule
+        rcmd = _ChanOP('read', None) 
         wcmd = self.wqueue.popleft()
         ret = self._rw_nowait(wcmd, rcmd)[1]
         return (True, ret)
@@ -359,11 +386,12 @@ class Channel:
         """enable write guard"""
         if len(self.wqueue) > 0 or len(self.rqueue) == 0:
             # can't execute the write directly, so we queue the write guard
-            wcmd = ChanCMD('ALT', pguard.obj, alt=alt)
+            wcmd = _ChanOP('ALT', pguard.obj, alt=alt)
             wcmd.wguard = pguard
             self.wqueue.append(wcmd)
             return (False, None)
-        wcmd = ChanCMD('write', pguard.obj) # make sure it's treated as a write without a sleeping future
+        # make sure it's treated as a write without a sleeping future
+        wcmd = _ChanOP('write', pguard.obj) 
         rcmd = self.rqueue.popleft()
         ret = self._rw_nowait(wcmd, rcmd)[0]
         return (True, ret)
@@ -404,9 +432,13 @@ _ALT_WAITING  = "waiting"
 # This requires that all guard code is synchronous.
 # 
 # NB:
-# - this implementation should be able to support multiple ALT readers on a channel (the first one will be resolved)
-# - as we're resolving everything in a synchronous function and no longer allow multiple guards to go true at the same time,
-#   it should be safe to allow ALT writers and ALT readers in the same channel! 
+#
+# - this implementation should be able to support multiple ALT readers
+#   on a channel (the first one will be resolved)
+# - as we're resolving everything in a synchronous function and no
+#   longer allow multiple guards to go true at the same time, it
+#   should be safe to allow ALT writers and ALT readers in the same
+#   channel!
 
 class Alternative(object):
     """Alternative. Selects from a list of guards."""
@@ -448,14 +480,13 @@ class Alternative(object):
             self.state = _ALT_INACTIVE
             return (g, ret)
         
-        # No guard has been selected yet. Equivalent to self.selected == None. 
-        # Wait for one of the guards to become "ready".
-        # The guards wake us up by calling schedule() on the alt (see Channel)
+        # No guard has been selected yet. Wait for one of the guards to become "ready".
+        # The guards wake us up by calling schedule() on the alt (see Channel for example)
         self.state = _ALT_WAITING
         self.wait_fut = self.loop.create_future()
         g, ret = await self.wait_fut
-        # By this time, everything should be resolved and we have a selected guard and a return value (possibly None)
-        # We have also disabled the garuds.
+        # By this time, everything should be resolved and we have a selected guard
+        # and a return value (possibly None). We have also disabled the garuds.
         self.state = _ALT_INACTIVE
         return (g, ret)
     
@@ -464,7 +495,7 @@ class Alternative(object):
         Called by the guard."""
         if self.state != _ALT_WAITING:
             raise f"Error: running schedule on an ALT that was in state {self.state} instead of waiting."
-        # TODO: order here. It should be safe to set_result as long as we don't yield in it
+        # NB: It should be safe to set_result as long as we don't yield in it
         self.wait_fut.set_result((guard, ret))
         self._disableGuards()
         
@@ -473,10 +504,9 @@ class Alternative(object):
     # a = ALT.select(): 
     # async with ALT as a:
     #     ....
-    # NB: we may need to specify options to Alt if we want other options than priSelect
+    # We may need to specify options to Alt if we want other options than priSelect
     async def __aenter__(self):
         return await self.select()
 
     async def __aexit__(self, exc_type, exc, tb):
-        # TODO: we might want to run some cleanups here.
         return None
