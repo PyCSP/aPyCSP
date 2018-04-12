@@ -316,14 +316,9 @@ class Channel:
         # with the alt as key, and then use deque.remove(cmd).
         # an alt may have multiple channels, and a guard may be used by multiple alts, so
         # there is no easy place for a single cmd to be stored in either.
-        # deque now supports del deq[something], and deq.remove(), but need to find the obj first. 
-        nqueue = collections.deque()
-        for op in queue:
-            if not (op.cmd == 'ALT' and op.alt == alt):
-                nqueue.append(op)
-        return nqueue
-        #TODO
-        #return collections.deque(filter(lambda op: not(op.cmd == 'ALT' and op.alt == alt), queue))
+        # deque now supports del deq[something], and deq.remove(), but need to find the obj first.
+        #print("......remove_alt_pq : ", queue, list(filter(lambda op: not(op.cmd == 'ALT' and op.alt == alt), queue)))
+        return collections.deque(filter(lambda op: not(op.cmd == 'ALT' and op.alt == alt), queue))
 
     # TODO: read and write alts needs poison check. 
     def renable(self, alt):
