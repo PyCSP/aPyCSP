@@ -1,43 +1,5 @@
 #!/usr/bin/env python3
-"""Experimental implementation of the "VM" / CSP OP / opqueue concept. 
-
-Instead of a complicated set of thread-like coroutines, we simplify
-the implementation by taking advantage of two things:
-
-a) we queue operations on channels as opcodes + data (and potentially
-   futures that can be set when completing)
-
-b) we take advantage of cooperative multitasking, executing without
-   locks and knowing that we will not be preempted.
-
-The channel and ALT implementations could then be implemented in a
-less convoluted manner, should be easier to reason about and
-understand, and it turns out the channels and processes are
-significantly faster and use less memory than the other
-implementation. We can also support multiple readers using ALT on the
-same channel. It should be possible to use a similar trick to
-implement ALT for writing on the channel as well.
-
-We do have to change the semantics slightly though: 
-
-- enable and disable need to be synchronous calls that cannot yield.
-  They can, however, create couroutines and enter them in the event
-  loop as well as setting the results of futures.
-
-- disable no longer checks for ready guards, it's strickly for
-  unrollig registration of the ALT on the guards.
-
-- when a 'ready' condition is found, the channel end / guard is
-  responsible for immediately executing the action and returning the
-  result as well as the ready state. This can happen in enable(), but
-  also in timers etc.
-
-This simplifies another aspect: only one guard can become active at
-the same time as we enforce resolving and immediately unrolling when
-we notice the first ready guard.
-
-TODO: more detailt descriptions later.
-"""
+"""Experimental implementation of the "VM" / CSP OP / opqueue concept. See README.md for more information"""
 
 import asyncio
 import collections
@@ -64,10 +26,8 @@ def process(func):
 
 def chan_poisoncheck(func):
     "Decorator for making sure that poisoned channels raise exceptions"
-    # We just need to make sure we can correctly decorate both
-    # coroutines and ordinary methods and functions.  NB: we need to
-    # await here instead of optimizing the await away using a normal
-    # def for p_wrap as we need to check for exceptions here. If we
+    # We just need to safely decorate both coroutines and ordinary methods and functions
+    # NB: we need to await here as we need to check for exceptions. If we
     # just create a coroutine and return it directly, we will fail to
     # catch exceptions.
     @functools.wraps(func)
@@ -109,13 +69,11 @@ def Spawn(proc):
     loop = asyncio.get_event_loop()
     return loop.create_task(proc)
 
-# ******************** Base guards (channel ends should inherit from a Guard) ********************
-# 
-# don't let anything yield while runnning enable, disable priselect.
-# NB: what would not let us run remote ALTs... but the basecode cannot
-# do this anyway (there is no callback for schedule()).
+# ******************** Base and simple guards (channel ends should inherit from a Guard) ********************
+#
 
 class Guard(object):
+    """Base Guard class."""
     # JCSPSRC/src/com/quickstone/jcsp/lang/Guard.java
     def enable(self, alt):
         return (False, None)
@@ -133,7 +91,9 @@ class Skip(Guard):
 class Timer(Guard):
     def __init__(self, seconds):
         self.expired = False
-        self.alt = None
+        # TODO: to make it more general, allow 'alt' to be an op code queue? It wouldn't quite fit as enable() starts
+        # the timer, so we'd need a timer per queued opcode in that case. 
+        self.alt = None          
         self.seconds = seconds
         self.cb = None
 
@@ -143,7 +103,8 @@ class Timer(Guard):
         return (False, None)
 
     def disable(self, alt):
-        self.cb.cancel() # TODO: is this enough to make sure expire is not called after this?
+        # TODO: is cb.cancel() enough to make sure expire is not called after this?
+        self.cb.cancel() 
         self.alt = None
         
     async def expire(self):
@@ -224,7 +185,8 @@ class _ChanOP:
     
 # TODO: this implementation could implement buffered channels with a simple twist:
 # - the condition for suspending a write could be modified such that a
-#   write will succeed even if multiple writes are already queued up.
+#   write will succeed even if multiple writes are already queued up. It could be queued as a 'completed_write',
+#   or a write without a future as we don't need to wake anybody up on completion. 
 # - ALT writes should be considered as successful and transformed into normal
 #   writes if there is room in the buffer, otherwise, we will have to
 #   consider them again when there is room. 
@@ -353,12 +315,15 @@ class Channel:
         # a slightly faster alternative might be to store a reference to the cmd in a dict
         # with the alt as key, and then use deque.remove(cmd).
         # an alt may have multiple channels, and a guard may be used by multiple alts, so
-        # there is no easy place for a single cmd to be stored in either. 
+        # there is no easy place for a single cmd to be stored in either.
+        # deque now supports del deq[something], and deq.remove(), but need to find the obj first. 
         nqueue = collections.deque()
         for op in queue:
             if not (op.cmd == 'ALT' and op.alt == alt):
                 nqueue.append(op)
         return nqueue
+        #TODO
+        #return collections.deque(filter(lambda op: not(op.cmd == 'ALT' and op.alt == alt), queue))
 
     # TODO: read and write alts needs poison check. 
     def renable(self, alt):
@@ -439,6 +404,10 @@ _ALT_WAITING  = "waiting"
 #   longer allow multiple guards to go true at the same time, it
 #   should be safe to allow ALT writers and ALT readers in the same
 #   channel!
+# - don't let anything yield while runnning enable, disable priselect.
+#   NB: that would not let us run remote ALTs... but the basecode cannot
+#   do this anyway (there is no callback for schedule()).
+
 
 class Alternative(object):
     """Alternative. Selects from a list of guards."""
@@ -500,9 +469,10 @@ class Alternative(object):
         self._disableGuards()
         
 
-    # Support for asynchronous context managers. This lets us use this pattern as an alternative to
-    # a = ALT.select(): 
-    # async with ALT as a:
+    # Support for asynchronous context managers. Instead of the following:
+    #    a = ALT.select():
+    # we can use this as an alternative: 
+    #    async with ALT as a:
     #     ....
     # We may need to specify options to Alt if we want other options than priSelect
     async def __aenter__(self):
