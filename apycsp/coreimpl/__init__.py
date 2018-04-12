@@ -12,7 +12,7 @@ import inspect
 class ChannelPoisonException(Exception): 
     pass
 
-# Copied from the baseimpl
+# Copied from the lockimpl
 def process(func):
     @functools.wraps(func)
     async def proc_wrapped(*args, **kwargs):
@@ -296,7 +296,7 @@ class Channel:
     async def poison(self):
         """Poison a channel and wake up all ops in the queues so they can catch the poison."""
         # TODO: this doesn't need to be an async method any longer, but we keep it like this
-        # to make the interface compatible with the baseimpl.
+        # to make the interface compatible with lockimpl.
         if self.poisoned:
             return
         self.poisoned = True

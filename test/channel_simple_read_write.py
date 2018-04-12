@@ -9,14 +9,14 @@ import apycsp
 import time
 
 args = handle_common_args([
-    (('-b', '--base'), dict(help="use base implementation instead of altimpl", action="store_true", default=False))
+    (('-l', '--lock'), dict(help="use lock implementation instead of core implementation", action="store_true", default=False))
 ])
-if args.base:
-    print("Using base impl")
-    from apycsp import One2OneChannel as Channel, process, run_CSP
+if args.lock:
+    print("Using lock implementation")
+    from apycsp.lockimpl import One2OneChannel as Channel, process, run_CSP
 else:
-    print("Using altimpl")
-    from apycsp.altimpl import Channel, process, run_CSP
+    print("Using core implementation")
+    from apycsp import Channel, process, run_CSP
 
     
 @process

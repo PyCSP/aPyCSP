@@ -42,7 +42,7 @@ import apycsp
 import asyncio
 import json
 import functools
-from apycsp import ChannelPoisonException, Channel, ChannelEnd, ChannelInputEnd, ChannelOutputEnd
+from apycsp import ChannelPoisonException, Channel, ChannelEnd, ChannelReadEnd, ChannelWriteEnd
 
 # registry of channels to expose to the net. Keys are the names. 
 _chan_registry = {} 
@@ -370,6 +370,6 @@ class _RemoteChanProxy(_RemoteChan):
         if loop == None:
             loop = asyncio.get_event_loop()
         super().__init__(name, loop)
-        self.read  = ChannelInputEnd(self)
-        self.write = ChannelOutputEnd(self)
+        self.read  = ChannelReadEnd(self)
+        self.write = ChannelWriteEnd(self)
     

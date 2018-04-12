@@ -9,6 +9,19 @@ from apycsp.plugNplay import *
 
 handle_common_args()
 
+if 'BlackHoleChannel' not in vars():
+    print("Temp workaround for missing BlackHoleChannel")
+    class BlackHoleChannel(Channel):
+        def __init__(self, name=None):
+            Channel.__init__(self, name)
+        @chan_poisoncheck
+        async def _write(self, obj=None):
+            pass
+        @chan_poisoncheck
+        async def _read(self):
+            raise "BlackHoleChannels are not readable"
+    
+
 @process
 async def PoisonTest(cout):
     for i in range(100):

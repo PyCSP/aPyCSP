@@ -3,7 +3,7 @@
 # Copyright (c) 2018 John Markus Bjørndalen, jmb@cs.uit.no.
 # See LICENSE.txt for licensing details (MIT License). 
 from common import *
-from apycsp.altimpl import *
+from apycsp.lockimpl import *
 
 handle_common_args()
 
@@ -11,7 +11,7 @@ handle_common_args()
 async def AltTest_p():
     sg1 = Skip()
     sg2 = Skip()
-    ch = Channel('p')
+    ch = One2OneChannel()
     alt = Alternative(sg1, sg2, ch.read)
     ret = await alt.select()
     print("Returned from alt.select():", ret)
@@ -21,9 +21,10 @@ async def p1(cin):
     print("Bip 1")
     alt = Alternative(cin)
     for i in range(10):
-        print(f"p1: ding {i}")
-        g, ret = await alt.select()
-        print("p1: got from select:", ret, type(ret))
+        print("ding 1")
+        ret = await alt.select()
+        val = await ret()
+        print("p1: got from select:", ret, type(ret), val)
 
 # Same as above, but demonstrates the async with syntax. 
 @process
@@ -33,22 +34,8 @@ async def p1_b(cin):
     for i in range(10):
         print("ding 1")
         async with alt as ret:
-            g, val = ret
+            val = await ret()
             print("p1_b: got from select:", ret, type(ret), val)
-
-
-@process
-async def alt_writer(cout):
-    print("This is altwriter")
-    for i in range(10):
-        val = f"sendpkt{i}"
-        print(" -- altwriter sending with alt", val)
-        g = cout.alt_pending_write(val)
-        alt = Alternative(g)
-        ret = await alt.select()
-        print(" -- alt_writer done, got ", ret)
-        print(" ** ch queues : ", cout._chan.rqueue, cout._chan.wqueue)
-        
         
 @process    
 async def p2(cout):
@@ -61,21 +48,15 @@ def AltTest():
     run_CSP(AltTest_p())
     
 def AltTest2():
-    c = Channel('ch2')
+    c = One2OneChannel()
     run_CSP(p1(c.read),
             p2(c.write))
     
 def AltTest3():
-    c = Channel('ch3')
+    c = One2OneChannel()
     run_CSP(p1_b(c.read),
             p2(c.write))
-
-def AltTest4():
-    c = Channel('ch4')
-    run_CSP(alt_writer(c.write),
-            p1(c.read))
 
 AltTest()
 AltTest2()
 AltTest3()
-AltTest4()

@@ -4,6 +4,7 @@ from common import *
 from apycsp import *
 from apycsp.plugNplay import *
 import os
+import time
 
 handle_common_args()
 
@@ -59,3 +60,10 @@ try:
 except:
     print("Sleeping for a while to allow windows users to read benchmark results")
     time.sleep(15)
+
+def run_cprofile():
+    import cProfile
+    cProfile.run("commstime_bm()", 'commstime.prof')
+    import pstats
+    p = pstats.Stats('commstime.prof')
+    p.strip_dirs().sort_stats('cumtime').print_stats()
