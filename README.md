@@ -2,7 +2,7 @@
 
 Experimental version of the 0.3 line of PyCSP using asyncio. 
 
-The initial implementation of this library is kept close to the the
+The initial implementation of this library was kept close to the the
 PyCSP implementation to simplify comparisons. This means that some of
 the newer functionality from more recent PyCSP implementations (such
 as "retire") does not exist yet. 
@@ -38,6 +38,8 @@ Using the asyncio version, we need to write:
     val = await res()
     print("Got result from alt: ", val)
 ```
+
+NB / TODO: the lock based implementation has been moved to a separat repository: https://github.com/jmbjorndalen/aPyCSP_lockver
 
 
 Future considerations

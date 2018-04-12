@@ -7,21 +7,13 @@ import psutil
 import sys
 import time
 import common
+from apycsp import One2OneChannel, Any2OneChannel, One2AnyChannel, process, run_CSP
 
 args = common.handle_common_args([
     (["np"], dict(type=int, help='number of procs', default=10, nargs="?")),
-    (('-l', '--lock'), dict(help="use lock implementation instead of core impl", action="store_true", default=False))
     ])
 
 N_PROCS = args.np # 10 if len(sys.argv) < 2 else int(sys.argv[1])
-
-if args.lock:
-    print("Using lock implementation")
-    from apycsp.lockimpl import One2OneChannel, Any2OneChannel, One2AnyChannel, process, run_CSP
-else:
-    print("Using core implementation")
-    from apycsp import One2OneChannel, Any2OneChannel, One2AnyChannel, process, run_CSP
-
 
 @process
 async def simple_proc(pid, checkin, cin):

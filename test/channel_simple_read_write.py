@@ -7,17 +7,9 @@ See LICENSE.txt for licensing details (MIT License).
 from common import *
 import apycsp
 import time
+from apycsp import Channel, process, run_CSP
 
-args = handle_common_args([
-    (('-l', '--lock'), dict(help="use lock implementation instead of core implementation", action="store_true", default=False))
-])
-if args.lock:
-    print("Using lock implementation")
-    from apycsp.lockimpl import One2OneChannel as Channel, process, run_CSP
-else:
-    print("Using core implementation")
-    from apycsp import Channel, process, run_CSP
-
+args = handle_common_args()
     
 @process
 async def writer(N, cout):
