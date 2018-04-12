@@ -39,7 +39,9 @@ Using the asyncio version, we need to write:
     print("Got result from alt: ", val)
 ```
 
-NB / TODO: the lock based implementation has been moved to a separat repository: https://github.com/jmbjorndalen/aPyCSP_lockver
+NB / TODO: 
+- the lock based implementation has been moved to a separat repository: [https://github.com/jmbjorndalen/aPyCSP_lockver](https://github.com/jmbjorndalen/aPyCSP_lockver)
+- the thread based implementation is available in [https://github.com/jmbjorndalen/pycsp_classic](https://github.com/jmbjorndalen/pycsp_classic)
 
 
 Future considerations

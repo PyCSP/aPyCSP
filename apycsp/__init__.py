@@ -83,8 +83,7 @@ class Guard(object):
 class Skip(Guard):
     # JCSPSRC/src/com/quickstone/jcsp/lang/Skip.java
     def enable(self, alt):
-        #Thread.yield() in java version
-        return (True, None)
+        return (True, None) #Thread.yield() in java version
     def disable(self, alt):
         return True
 
@@ -115,10 +114,9 @@ class Timer(Guard):
 # ******************** Channels ********************
 
 class ChannelEnd(object):
-    """The channel ends are objects that replace the Channel read()
+    """The channel ends are objects that wrap the Channel read()
     and write() methods, and adds methods for forwarding poison() calls. 
-    Specific read/write channel ends are used for implementing ALT 
-    semantics for the channel ends. """
+    The channel ends are used for implementing ALT semantics and guards. """
     def __init__(self, chan):
         self._chan = chan
     def channel(self):
@@ -204,7 +202,7 @@ class Channel:
         self.name = name
         self.poisoned = False
         self.wqueue = collections.deque()  
-        self.rqueue = collections.deque() # could also contain "ALT" ops.
+        self.rqueue = collections.deque() 
         self.read = ChannelReadEnd(self)
         self.write = ChannelWriteEnd(self)
 
@@ -295,8 +293,8 @@ class Channel:
 
     async def poison(self):
         """Poison a channel and wake up all ops in the queues so they can catch the poison."""
-        # TODO: this doesn't need to be an async method any longer, but we keep it like this
-        # to make the interface compatible with lockimpl.
+        # This doesn't need to be an async method any longer, but we
+        # keep it like this to simplify poisoning of remote channels.
         if self.poisoned:
             return
         self.poisoned = True
