@@ -238,7 +238,8 @@ class Channel:
         return (0, obj)
 
     if 0:
-        # TODO: adding this decorator adds about a microsecond to the op time... Can we improve it? 
+        # TODO: adding this decorator adds about a microsecond to the op time _and_ it adds memory usage for
+        # processes waiting on a channel (call/await/future stack)... Can we improve it? 
         @chan_poisoncheck
         async def _write(self, obj):
             wcmd = _ChanOP('write', obj)

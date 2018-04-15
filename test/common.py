@@ -33,3 +33,7 @@ def handle_common_args(argspecs=[]):
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     return args
     
+
+def avg(vals):
+    "Returns the average of values"
+    return sum(vals) / len(vals)
