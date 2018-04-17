@@ -38,6 +38,8 @@ async def ParDelta2(cin, cout1, cout2):
     while True:
         t = await cin()
         # JCSP version uses a Par here, so we do the same.
+        # NB: cout1(t) generates a coroutine, which is equivalent with a CSP process.
+        # This is therefore safe to do. 
         await Parallel(cout1(t),
                        cout2(t))
 

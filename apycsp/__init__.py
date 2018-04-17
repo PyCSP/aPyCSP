@@ -42,7 +42,6 @@ def chan_poisoncheck(func):
     return p_wrap
 
 
-# TODO: should consider alternative naming of these functions. 
 def run_CSP(*procs):
     """Runs the CSP processes in parallel (equivalent to a PAR)
     Intended to be used by the outer sequential program that starts running a CSP network. 
