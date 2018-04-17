@@ -4,7 +4,7 @@
 import asyncio
 import collections
 import functools
-import inspect
+#import inspect
 
 
 # ******************** Core code ********************
@@ -259,7 +259,7 @@ class Channel:
             if len(self.rqueue) > 0 or len(self.wqueue) == 0:
                 # readers ahead of us, or no writiers
                 return await self._wait_for_op(self.rqueue, rcmd)
-            # find matchin write cmd.
+            # find matching write cmd.
             wcmd = self.wqueue.popleft()
             return self._rw_nowait(wcmd, rcmd)[1]
     else:
