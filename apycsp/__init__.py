@@ -24,18 +24,17 @@ def process(func):
                 await ch.poison()
     return proc_wrapped
 
+
 def chan_poisoncheck(func):
     "Decorator for making sure that poisoned channels raise exceptions"
-    # We just need to safely decorate both coroutines and ordinary methods and functions
     # NB: we need to await here as we need to check for exceptions. If we
     # just create a coroutine and return it directly, we will fail to
     # catch exceptions.
     @functools.wraps(func)
     async def p_wrap(self, *args, **kwargs):
-        if self.poisoned:
-            raise ChannelPoisonException()
         try:
-            return await func(self, *args, **kwargs)
+            if not self.poisoned:
+                return await func(self, *args, **kwargs)
         finally:
             if self.poisoned:
                 raise ChannelPoisonException()
@@ -236,7 +235,7 @@ class Channel:
             rcmd.alt.schedule(self.read, obj)
         return (0, obj)
 
-    if 0:
+    if 1:
         # TODO: adding this decorator adds about a microsecond to the op time _and_ it adds memory usage for
         # processes waiting on a channel (call/await/future stack)... Can we improve it? 
         @chan_poisoncheck
