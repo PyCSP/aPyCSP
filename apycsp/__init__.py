@@ -29,7 +29,7 @@ def chan_poisoncheck(func):
     "Decorator for making sure that poisoned channels raise exceptions"
     # NB: we need to await here as we need to check for exceptions. If we
     # just create a coroutine and return it directly, we will fail to
-    # catch exceptions.
+    # catch exceptions in the wrapper. 
     @functools.wraps(func)
     async def p_wrap(self, *args, **kwargs):
         try:
@@ -235,9 +235,10 @@ class Channel:
             rcmd.alt.schedule(self.read, obj)
         return (0, obj)
 
-    if 1:
-        # TODO: adding this decorator adds about a microsecond to the op time _and_ it adds memory usage for
-        # processes waiting on a channel (call/await/future stack)... Can we improve it? 
+    if 0:
+        # TODO: adding this decorator adds about 0.7 microseconds to the op time _and_ it adds memory usage for
+        # processes waiting on a channel (call/await/future stack)... (5092 vs 4179 bytes per proc in n_procs.py)
+        # Can we improve it? 
         @chan_poisoncheck
         async def _write(self, obj):
             wcmd = _ChanOP('write', obj)
@@ -263,29 +264,27 @@ class Channel:
     else:
         # For comparison: doing the same without decorators
         async def _write(self, obj):
-            if self.poisoned:
-                raise ChannelPoisonException()
             try:
-                wcmd = _ChanOP('write', obj)
-                if len(self.wqueue) > 0 or len(self.rqueue) == 0:
-                    return await self._wait_for_op(self.wqueue, wcmd)
-                rcmd = self.rqueue.popleft()
-                return self._rw_nowait(wcmd, rcmd)[0]
+                if not self.poisoned:
+                    wcmd = _ChanOP('write', obj)
+                    if len(self.wqueue) > 0 or len(self.rqueue) == 0:
+                        return await self._wait_for_op(self.wqueue, wcmd)
+                    rcmd = self.rqueue.popleft()
+                    return self._rw_nowait(wcmd, rcmd)[0]
             finally:
                 if self.poisoned:
                     raise ChannelPoisonException()
 
         async def _read(self):
-            if self.poisoned:
-                raise ChannelPoisonException()
             try:
-                rcmd = _ChanOP('read', None)
-                if len(self.rqueue) > 0 or len(self.wqueue) == 0:
-                    # readers ahead of us, or no writiers
-                    return await self._wait_for_op(self.rqueue, rcmd)
-                # find matchin write cmd.
-                wcmd = self.wqueue.popleft()
-                return self._rw_nowait(wcmd, rcmd)[1]
+                if not self.poisoned:
+                    rcmd = _ChanOP('read', None)
+                    if len(self.rqueue) > 0 or len(self.wqueue) == 0:
+                        # readers ahead of us, or no writiers
+                        return await self._wait_for_op(self.rqueue, rcmd)
+                    # find matchin write cmd.
+                    wcmd = self.wqueue.popleft()
+                    return self._rw_nowait(wcmd, rcmd)[1]
             finally:
                 if self.poisoned:
                     raise ChannelPoisonException()
@@ -317,7 +316,8 @@ class Channel:
         #print("......remove_alt_pq : ", queue, list(filter(lambda op: not(op.cmd == 'ALT' and op.alt == alt), queue)))
         return collections.deque(filter(lambda op: not(op.cmd == 'ALT' and op.alt == alt), queue))
 
-    # TODO: read and write alts needs poison check. 
+    # TODO: read and write alts needs poison check, but we need de-register guards properly before we
+    # consider throwing an exception. 
     def renable(self, alt):
         """enable for the input/read end"""
         if len(self.rqueue) > 0 or len(self.wqueue) == 0:

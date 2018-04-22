@@ -55,3 +55,5 @@ def run_n_procs(n):
     print("{" + (f'"nprocs" : {n}, "t1" : {t1}, "t2" : {t2}, "t3" : {t3}, "tcr" : {tcr}, "trun" : {trun}, "rss" : {rss}') + "}")
 
 run_n_procs(N_PROCS)
+
+
