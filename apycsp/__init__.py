@@ -12,8 +12,8 @@ import functools
 class ChannelPoisonException(Exception): 
     pass
 
-# Copied from the lockimpl
 def process(func):
+    """Annotates a coroutine as a process and takes care of poison propagation. """
     @functools.wraps(func)
     async def proc_wrapped(*args, **kwargs):
         try:
