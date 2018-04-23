@@ -33,9 +33,8 @@ async def p1_b(cin):
     alt = Alternative(cin)
     for i in range(10):
         print("ding 1")
-        async with alt as ret:
-            g, val = ret
-            print("p1_b: got from select:", ret, type(ret), val)
+        async with alt as (g, val):
+            print("p1_b: got from select:", g, type(g), val)
 
 
 @process

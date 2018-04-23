@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Experimental implementation of the "VM" / CSP OP / opqueue concept. See README.md for more information"""
+"""Core implementation of the aPyCSP library. See README.md for more information"""
 
 import asyncio
 import collections
@@ -48,6 +48,7 @@ def run_CSP(*procs):
     loop = asyncio.get_event_loop()
     return loop.run_until_complete(asyncio.gather(*procs))
 
+
 def run_CSP_seq(*procs):
     """Runs the CSP processes in one by one (equivalent to a SEQ). 
     Intended to be used by the outer sequential program that starts running a CSP network. 
@@ -55,11 +56,14 @@ def run_CSP_seq(*procs):
     loop = asyncio.get_event_loop()
     return [loop.run_until_complete(p) for p in procs]
 
+
 async def Parallel(*procs):
     return await asyncio.gather(*procs)
 
+
 async def Sequence(*procs):
     return [await p for p in procs]
+
 
 def Spawn(proc):
     """For running a process in the background. Actual execution is only
