@@ -331,7 +331,7 @@ class Channel:
             rcmd = _ChanOP('ALT', None, alt=alt)
             self.rqueue.append(rcmd)
             return (False, None)
-        # we have a waiting writer that we can match up with, so we execute the read and return
+        # We have a waiting writer that we can match up with, so we execute the read and return
         # the  read value as well as True for the guard.
         # make sure it's treated as a read to avoid having rw_nowait trying to call schedule
         rcmd = _ChanOP('read', None) 
@@ -401,7 +401,7 @@ _ALT_WAITING  = "waiting"
 #   should be safe to allow ALT writers and ALT readers in the same
 #   channel!
 # - don't let anything yield while runnning enable, disable priselect.
-#   NB: that would not let us run remote ALTs... but the basecode cannot
+#   NB: that would not let us run remote ALTs... but the reference implementation cannot
 #   do this anyway (there is no callback for schedule()).
 
 
@@ -468,7 +468,7 @@ class Alternative(object):
     # Support for asynchronous context managers. Instead of the following:
     #    a = ALT.select():
     # we can use this as an alternative: 
-    #    async with ALT as a:
+    #    async with ALT as (g, ret):
     #     ....
     # We may need to specify options to Alt if we want other options than priSelect
     async def __aenter__(self):
