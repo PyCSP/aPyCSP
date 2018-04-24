@@ -74,7 +74,7 @@ def Spawn(proc):
 # ******************** Base and simple guards (channel ends should inherit from a Guard) ********************
 #
 
-class Guard(object):
+class Guard:
     """Base Guard class."""
     # JCSPSRC/src/com/quickstone/jcsp/lang/Guard.java
     def enable(self, alt):
@@ -115,7 +115,7 @@ class Timer(Guard):
 
 # ******************** Channels ********************
 
-class ChannelEnd(object):
+class ChannelEnd:
     """The channel ends are objects that wrap the Channel read()
     and write() methods, and adds methods for forwarding poison() calls. 
     The channel ends are used for implementing ALT semantics and guards. """
@@ -431,7 +431,7 @@ class BufferedChannel(Channel):
 #   do this anyway (there is no callback for schedule()).
 
 
-class Alternative(object):
+class Alternative:
     # States for the Alternative construct
     _ALT_INACTIVE = "inactive"
     _ALT_READY    = "ready"
