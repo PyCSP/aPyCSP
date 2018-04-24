@@ -407,14 +407,7 @@ class BufferedChannel(Channel):
         return self._rw_nowait(wcmd, rcmd)[0]
 
 # ******************** ALT ********************
-
-
-# States for the Alternative construct
-_ALT_INACTIVE = "inactive"
-_ALT_READY    = "ready"
-_ALT_ENABLING = "enabling"
-_ALT_WAITING  = "waiting"
-
+#
 # This differs from the thread-based implementation in the following way:
 # 1. guards are enabled, stopping on the first ready guard if any.
 # 2. if the alt is waiting for a guard to go ready, the first guard to
@@ -439,10 +432,16 @@ _ALT_WAITING  = "waiting"
 
 
 class Alternative(object):
+    # States for the Alternative construct
+    _ALT_INACTIVE = "inactive"
+    _ALT_READY    = "ready"
+    _ALT_ENABLING = "enabling"
+    _ALT_WAITING  = "waiting"
+    
     """Alternative. Selects from a list of guards."""
     def __init__(self, *guards):
         self.guards = guards
-        self.state = _ALT_INACTIVE
+        self.state = self._ALT_INACTIVE
         self.enabled_guards = [] # list of guards we successfully enabled (and would need to disable on exit)
         self.wait_fut = None # wait future when we need to wait for any guard to complete
         self.loop = asyncio.get_event_loop()
@@ -455,7 +454,7 @@ class Alternative(object):
             enabled, ret = g.enable(self)
             if enabled:
                 # Current guard is ready, so use this immediately (works for priSelect)
-                self.state = _ALT_READY
+                self.state = self._ALT_READY
                 return (g, ret)
         return (None, None)
 
@@ -470,28 +469,28 @@ class Alternative(object):
     
     async def priSelect(self):
         # First, enable guards. 
-        self.state = _ALT_ENABLING
+        self.state = self._ALT_ENABLING
         g, ret = self._enableGuards()
         if g:
             # we found a guard in enableGuards
             self._disableGuards()
-            self.state = _ALT_INACTIVE
+            self.state = self._ALT_INACTIVE
             return (g, ret)
         
         # No guard has been selected yet. Wait for one of the guards to become "ready".
         # The guards wake us up by calling schedule() on the alt (see Channel for example)
-        self.state = _ALT_WAITING
+        self.state = self._ALT_WAITING
         self.wait_fut = self.loop.create_future()
         g, ret = await self.wait_fut
         # By this time, everything should be resolved and we have a selected guard
         # and a return value (possibly None). We have also disabled the garuds.
-        self.state = _ALT_INACTIVE
+        self.state = self._ALT_INACTIVE
         return (g, ret)
     
     def schedule(self, guard, ret):
         """A wake-up call to processes ALTing on guards controlled by this object.
         Called by the guard."""
-        if self.state != _ALT_WAITING:
+        if self.state != self._ALT_WAITING:
             raise f"Error: running schedule on an ALT that was in state {self.state} instead of waiting."
         # NB: It should be safe to set_result as long as we don't yield in it
         self.wait_fut.set_result((guard, ret))
