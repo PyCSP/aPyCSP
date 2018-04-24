@@ -172,6 +172,11 @@ class ChannelReadEnd(ChannelEnd, Guard):
         return self._chan.rdisable(alt)
     def __repr__(self):
         return "<ChannelReadEnd wrapping %s>" % self._chan
+    # support async for ch.read: 
+    async def __aiter__(self):
+        return self
+    async def __anext__(self):
+        return await self._chan._read()
 
 class _ChanOP:
     """Used to store channel cmd/ops for the op queues"""
@@ -207,6 +212,9 @@ class Channel:
         self.rqueue = collections.deque() 
         self.read = ChannelReadEnd(self)
         self.write = ChannelWriteEnd(self)
+
+    def __repr__(self):
+        return "<Channel {} wq {} rq {}>".format(self.name, len(self.wqueue), len(self.rqueue))
 
     def _wait_for_op(self, queue, op):
         """Used when we need to queue an operation and wait for its completion. 
@@ -361,6 +369,12 @@ class Channel:
         """Removes the ALT from the writer queue"""
         self.wqueue = self._remove_alt_from_pqueue(self.wqueue, alt)
         
+
+    # support async for channel:
+    async def __aiter__(self):
+        return self
+    async def __anext__(self):
+        return await self._read()
         
 One2OneChannel = Channel
 One2AnyChannel = Channel
@@ -372,6 +386,25 @@ async def poisonChannel(ch):
     "Poisons a channel or a channel end"
     await ch.poison()
     
+    
+class BufferedChannel(Channel):
+    """Buffered Channel. TODO: should probably be an option on the main channel type, and we should also provide a buffer limit."""
+    def __init__(self, name="", loop=None):
+        super().__init__(name=name, loop=loop)
+
+    @chan_poisoncheck
+    async def _write(self, obj):
+        wcmd = _ChanOP('write', obj)
+        if len(self.wqueue) > 0 or len(self.rqueue) == 0:
+            # a) somebody else is already waiting to write, so we're not going to
+            #    change the situation any with this write.
+            # b) nobody is waiting for our write.
+            # The main difference with normal write: simply append a write op without a future and return to the user.
+            self.wqueue.append(wcmd)
+            return 0
+        # find matching read cmd. 
+        rcmd = self.rqueue.popleft()
+        return self._rw_nowait(wcmd, rcmd)[0]
 
 # ******************** ALT ********************
 

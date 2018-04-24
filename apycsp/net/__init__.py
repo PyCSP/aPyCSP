@@ -35,7 +35,9 @@ sort out the poison semantics and potential overheads etc for this first.
 Channel naming service is very simple at the moment: if we don't have an entry for a given channel name, 
 we query all servers for their list of current channels. Then, the channel name is looked up again. 
 
-TODO: We should consider a more sophisticated naming service. 
+TODO: 
+- We should consider a more sophisticated naming service. 
+- We should replace the queues with buffered channels. 
 """
 
 import apycsp
