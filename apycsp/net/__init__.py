@@ -237,7 +237,7 @@ class _ClientConn():
         res = await rq
         del _opqueue[msgno]  # delete queue after command is finished
         if res.get('exc', None) == 'ChannelPoisonException':
-            print("propagating poison, ", cmd, res)
+            #print("propagating poison, ", cmd, res)
             raise ChannelPoisonException()
         return res['ret']
         
