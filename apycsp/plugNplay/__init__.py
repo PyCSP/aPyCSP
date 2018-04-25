@@ -14,30 +14,27 @@ from apycsp import process, Channel, ChannelPoisonException, Alternative, Parall
 async def Identity(cin, cout):
     """Copies its input stream to its output stream, adding a one-place buffer
     to the stream."""
-    while 1:
-        t = await cin()
+    async for t in cin:
         await cout(t)
-
+        
 @process
 async def Prefix(cin, cout, prefixItem=None):
     t = prefixItem
-    while True:
+    await cout(t)
+    async for t in cin:
         await cout(t)
-        t = await cin()
 
 @process
 async def SeqDelta2(cin, cout1, cout2):
     """Sequential version of Delta2"""
-    while True:
-        t = await cin()
+    async for t in cin:
         await cout1(t)
         await cout2(t)
 
 @process
 async def ParDelta2(cin, cout1, cout2):
     """Parallel version of Delta2"""
-    while True:
-        t = await cin()
+    async for t in cin:
         # NB: cout1(t) generates a coroutine, which is equivalent with a CSP process.
         # This is therefore safe to do. 
         await Parallel(cout1(t),
@@ -51,12 +48,13 @@ async def Successor(cin, cout):
     """Adds 1 to the value read on the input channel and outputs it on the output channel.
     Infinite loop.
     """
-    while True:
-        await cout(await cin()+1)
+    async for t in cin:
+        await cout(t+1)
 
 @process
 async def SkipProcess():
     pass
+
 
 @process
 async def Mux2(cin1, cin2, cout):

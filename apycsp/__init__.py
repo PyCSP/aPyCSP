@@ -187,16 +187,8 @@ class _ChanOP:
         self.alt = alt
     def __repr__(self):
         return f"<_ChanOP: {self.cmd}>"
+
     
-# TODO: this implementation could implement buffered channels with a simple twist:
-# - the condition for suspending a write could be modified such that a
-#   write will succeed even if multiple writes are already queued up. It could be queued as a 'completed_write',
-#   or a write without a future as we don't need to wake anybody up on completion. 
-# - ALT writes should be considered as successful and transformed into normal
-#   writes if there is room in the buffer, otherwise, we will have to
-#   consider them again when there is room. 
-# - when write ops are retired, we need to consdier waking up alts and writes
-#   that are sleeping on a write
 class Channel:
     """CSP Channels for aPyCSP. This is a generic channel that can be used with multiple readers
     and writers. The channel ends also supports being used as read guards (read ends) and for 
@@ -268,7 +260,7 @@ class Channel:
         async def _read(self):
             rcmd = _ChanOP('read', None)
             if len(self.rqueue) > 0 or len(self.wqueue) == 0:
-                # readers ahead of us, or no writiers
+                # readers ahead of us, or no writers
                 return await self._wait_for_op(self.rqueue, rcmd)
             # find matching write cmd.
             wcmd = self.wqueue.popleft()
@@ -301,18 +293,19 @@ class Channel:
                 if self.poisoned:
                     raise ChannelPoisonException()
 
+        
     async def poison(self):
         """Poison a channel and wake up all ops in the queues so they can catch the poison."""
         # This doesn't need to be an async method any longer, but we
         # keep it like this to simplify poisoning of remote channels.
         if self.poisoned:
             return
-        self.poisoned = True
         def poison_queue(queue):
             while len(queue) > 0:
                 op = queue.popleft()
                 if op.fut:
                     op.fut.set_result(None)
+        self.poisoned = True
         poison_queue(self.wqueue)
         poison_queue(self.rqueue)        
 
@@ -386,9 +379,17 @@ async def poisonChannel(ch):
     "Poisons a channel or a channel end"
     await ch.poison()
     
-    
+
+# TODO:
+# - this could be an option on the normal channel.
+# - buffer limit
+# - ALT writes should be considered as successful and transformed into normal
+#   writes if there is room in the buffer, otherwise, we will have to
+#   consider them again when there is room. 
+# - when write ops are retired, we need to consdier waking up alts and writes
+#   that are sleeping on a write
 class BufferedChannel(Channel):
-    """Buffered Channel. TODO: should probably be an option on the main channel type, and we should also provide a buffer limit."""
+    """Buffered Channel. """
     def __init__(self, name="", loop=None):
         super().__init__(name=name, loop=loop)
 
@@ -406,6 +407,7 @@ class BufferedChannel(Channel):
         rcmd = self.rqueue.popleft()
         return self._rw_nowait(wcmd, rcmd)[0]
 
+    
 # ******************** ALT ********************
 #
 # This differs from the thread-based implementation in the following way:
@@ -483,13 +485,13 @@ class Alternative:
         self.wait_fut = self.loop.create_future()
         g, ret = await self.wait_fut
         # By this time, everything should be resolved and we have a selected guard
-        # and a return value (possibly None). We have also disabled the garuds.
+        # and a return value (possibly None). We have also disabled the guards.
         self.state = self._ALT_INACTIVE
         return (g, ret)
     
     def schedule(self, guard, ret):
         """A wake-up call to processes ALTing on guards controlled by this object.
-        Called by the guard."""
+        Called by the (self) selected guard."""
         if self.state != self._ALT_WAITING:
             raise f"Error: running schedule on an ALT that was in state {self.state} instead of waiting."
         # NB: It should be safe to set_result as long as we don't yield in it
