@@ -498,7 +498,7 @@ class Alternative:
         
 
     # Support for asynchronous context managers. Instead of the following:
-    #    a = ALT.select():
+    #    (g, ret) = ALT.select():
     # we can use this as an alternative: 
     #    async with ALT as (g, ret):
     #     ....
