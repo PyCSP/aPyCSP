@@ -5,6 +5,7 @@ from apycsp import *
 from apycsp.plugNplay import *
 import os
 import time
+import apycsp
 
 print("--------------------- Commstime --------------------")
 handle_common_args()
@@ -28,31 +29,31 @@ async def consumer(cin, run_no):
     await cin.poison()
     return tchan
 
-def CommsTimeBM(run_no):
+def CommsTimeBM(run_no, Delta2=Delta2):
     # Create channels
     a = One2OneChannel("a")
     b = One2OneChannel("b")
     c = One2OneChannel("c")
     d = One2OneChannel("d")
 
-    #print("Running commstime test")
-    # Rather than pass the objects and get the channel ends wrong, or doing complex
-    # addons like in csp.net, i simply pass the write and read functions as channel ends.
-    # Note: c.read.im_self == c, also check im_func, im_class
     rets = run_CSP(Prefix(c.read, a.write, prefixItem = 0),  # initiator
                    Delta2(a.read, b.write, d.write),         # forwarding to two
                    Successor(b.read, c.write),               # feeding back to prefix
                    consumer(d.read, run_no))                 # timing process
     return rets[-1]
 
-N_BM = 10
-tchans = []
-for i in range(N_BM):
-    tchans.append(CommsTimeBM(i))
-print("Min {:7.3f}  Avg {:7.3f} Max {:7.3f}".format(1_000_000 * min(tchans),
-                                                    1_000_000 * sum(tchans)/len(tchans), 
-                                                    1_000_000 * max(tchans)))
+def run_bm(Delta2=apycsp.plugNplay.Delta2):
+    print(f"Running with Delta2 = {Delta2}")
+    N_BM = 10
+    tchans = []
+    for i in range(N_BM):
+        tchans.append(CommsTimeBM(i, Delta2))
+    print("Min {:7.3f}  Avg {:7.3f} Max {:7.3f}".format(1_000_000 * min(tchans),
+                                                        1_000_000 * sum(tchans)/len(tchans), 
+                                                        1_000_000 * max(tchans)))
 
+run_bm(apycsp.plugNplay.ParDelta2)
+run_bm(apycsp.plugNplay.SeqDelta2)
 # A bit of a hack, but windows does not have uname()
 try:
     os.uname()

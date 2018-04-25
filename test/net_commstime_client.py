@@ -48,10 +48,7 @@ def CommsTimeBM():
     c = apycsp.net.get_channel_proxy_s("c")
     d = apycsp.net.get_channel_proxy_s("d")
 
-    print("Running commstime test")
-    # Rather than pass the objects and get the channel ends wrong, or doing complex
-    # addons like in csp.net, i simply pass the write and read functions as channel ends.
-    # Note: c.read.im_self == c, also check im_func, im_class
+    print("Running commstime")
     rets = run_CSP(Prefix(c.read, a.write, prefixItem = 0),  # initiator
                    Delta2(a.read, b.write, d.write),         # forwarding to two
                    Successor(b.read, c.write),               # feeding back to prefix
