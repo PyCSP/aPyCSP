@@ -274,33 +274,6 @@ def send_message_sync(cmd):
 
 
         
-_rchan_reg = {} # class / shared list of known channels in a remote server
-async def _find_remote(name):
-    """Find a remote channel. """
-    # TODO: this fails if we allow remote channels to move, or if we reconnect to the remote server
-    if name in _rchan_reg:
-        return _rchan_reg[name]
-    for clname, conn in _clconn.items():
-        ret = await conn.send_recv_cmd({'op' : 'chanlist'})
-        print("Registering", ret, "as owned by", clname)
-        for name in ret:
-            _rchan_reg[name] = conn
-    return _rchan_reg[name]
-
-
-async def get_channel_proxy(name):
-    """Returns a remote channel. Use this from within a coroutine or aPyCSP process."""
-    conn = await _find_remote(name)
-    return _RemoteChanProxy(name, conn=conn)
-
-
-def get_channel_proxy_s(name):
-    """Synchronous version when we want to create a proxy from outside a coroutine
-    """
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(get_channel_proxy(name))
-
-
 # Inherit from Channel and ChannelEnd to make sure poison propagation works locally as well. 
 class _RemoteChan(Channel):
     """Proxy object for using a remote channel. 
@@ -346,4 +319,30 @@ class _RemoteChanProxy(_RemoteChan):
         super().__init__(name, loop, conn)
         self.read  = ChannelReadEnd(self)
         self.write = ChannelWriteEnd(self)
-    
+
+        
+_rchan_reg = {} # connections to use to reach a remote channel. Indexed by channel name. 
+async def _find_remote(name):
+    """Find connection for a remote channel. """
+    # TODO: this fails if we allow remote channels to move, or if we reconnect to the remote server
+    if name in _rchan_reg:
+        return _rchan_reg[name]
+    for clname, conn in _clconn.items():
+        ret = await conn.send_recv_cmd({'op' : 'chanlist'})
+        print("Registering", ret, "as owned by", clname)
+        for name in ret:
+            _rchan_reg[name] = conn
+    return _rchan_reg[name]
+
+
+async def get_channel_proxy(name):
+    """Returns a remote channel. Use this from within a coroutine or aPyCSP process."""
+    conn = await _find_remote(name)
+    return _RemoteChanProxy(name, conn=conn)
+
+
+def get_channel_proxy_s(name):
+    """Synchronous version when we want to create a proxy from outside a coroutine
+    """
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(get_channel_proxy(name))
