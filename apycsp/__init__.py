@@ -219,7 +219,7 @@ class Channel:
         return fut
 
     def _rw_nowait(self, wcmd, rcmd):
-        """Excecute a 'read/write' and wakes up any futures. Returns the
+        """Execute a 'read/write' and wakes up any futures. Returns the
         return value for (write, read).  
          NB: a _read ALT calling _rw_nowait should represent its own
         command as a normal 'read' instead of an ALT to avoid having
@@ -412,7 +412,7 @@ class BufferedChannel(Channel):
 #   should be safe to allow ALT writers and ALT readers in the same
 #   channel!
 # - don't let anything yield while runnning enable, disable priselect.
-#   NB: that would not let us run remote ALTs... but the reference implementation cannot
+#   NB: that would not let us run remote ALTs/Guards... but the reference implementation cannot
 #   do this anyway (there is no callback for schedule()).
 
 
