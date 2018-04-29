@@ -10,6 +10,9 @@ args = common.handle_common_args([
 ])
 common.handle_common_args()
 
+if 0:
+    import sigpauser
+
 loop = asyncio.get_event_loop()
 serv = apycsp.net.start_server(args.port)
 

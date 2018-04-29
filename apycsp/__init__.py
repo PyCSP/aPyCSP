@@ -239,12 +239,27 @@ class Channel:
             rcmd.alt.schedule(self.read, obj)
         return (0, obj)
 
-    if 0:
-        # TODO: adding this decorator adds about 0.7 microseconds to the op time _and_ it adds memory usage for
-        # processes waiting on a channel (call/await/future stack)... (5092 vs 4179 bytes per proc in n_procs.py)
-        # Can we improve it? 
-        @chan_poisoncheck
-        async def _write(self, obj):
+    # TODO: moved the decorated versions of _read and _write to test/common_exp.py for easier
+    # experimenting with alternative implementations. 
+    async def _read(self):
+        try:
+            if self.poisoned:
+                return
+            rcmd = _ChanOP('read', None)
+            if len(self.rqueue) > 0 or len(self.wqueue) == 0:
+                # readers ahead of us, or no writiers
+                return await self._wait_for_op(self.rqueue, rcmd)
+            # find matchin write cmd.
+            wcmd = self.wqueue.popleft()
+            return self._rw_nowait(wcmd, rcmd)[1]
+        finally:
+            if self.poisoned:
+                raise ChannelPoisonException()
+        
+    async def _write(self, obj):
+        try:
+            if self.poisoned:
+                return
             wcmd = _ChanOP('write', obj)
             if len(self.wqueue) > 0 or len(self.rqueue) == 0:
                 # a) somebody else is already waiting to write, so we're not going to
@@ -255,45 +270,10 @@ class Channel:
             # find matching read cmd. 
             rcmd = self.rqueue.popleft()
             return self._rw_nowait(wcmd, rcmd)[0]
-        
-        @chan_poisoncheck
-        async def _read(self):
-            rcmd = _ChanOP('read', None)
-            if len(self.rqueue) > 0 or len(self.wqueue) == 0:
-                # readers ahead of us, or no writers
-                return await self._wait_for_op(self.rqueue, rcmd)
-            # find matching write cmd.
-            wcmd = self.wqueue.popleft()
-            return self._rw_nowait(wcmd, rcmd)[1]
-    else:
-        # For comparison: doing the same without decorators
-        async def _write(self, obj):
-            try:
-                if not self.poisoned:
-                    wcmd = _ChanOP('write', obj)
-                    if len(self.wqueue) > 0 or len(self.rqueue) == 0:
-                        return await self._wait_for_op(self.wqueue, wcmd)
-                    rcmd = self.rqueue.popleft()
-                    return self._rw_nowait(wcmd, rcmd)[0]
-            finally:
-                if self.poisoned:
-                    raise ChannelPoisonException()
+        finally:
+            if self.poisoned:
+                raise ChannelPoisonException()
 
-        async def _read(self):
-            try:
-                if not self.poisoned:
-                    rcmd = _ChanOP('read', None)
-                    if len(self.rqueue) > 0 or len(self.wqueue) == 0:
-                        # readers ahead of us, or no writiers
-                        return await self._wait_for_op(self.rqueue, rcmd)
-                    # find matchin write cmd.
-                    wcmd = self.wqueue.popleft()
-                    return self._rw_nowait(wcmd, rcmd)[1]
-            finally:
-                if self.poisoned:
-                    raise ChannelPoisonException()
-
-        
     async def poison(self):
         """Poison a channel and wake up all ops in the queues so they can catch the poison."""
         # This doesn't need to be an async method any longer, but we
@@ -319,6 +299,9 @@ class Channel:
         # there is no easy place for a single cmd to be stored in either.
         # deque now supports del deq[something], and deq.remove(), but need to find the obj first.
         #print("......remove_alt_pq : ", queue, list(filter(lambda op: not(op.cmd == 'ALT' and op.alt == alt), queue)))
+        # TODO: one option _could_ be to use an ordered dict (new dicts are ordered as well), but we would need to
+        # have a unique key that can be used to cancel commands later (and remove the first entry when popping)
+        # collections.OrderedDict() has a popitem() method..
         return collections.deque(filter(lambda op: not(op.cmd == 'ALT' and op.alt == alt), queue))
 
     # TODO: read and write alts needs poison check, but we need de-register guards properly before we

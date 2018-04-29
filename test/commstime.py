@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
-# -*- coding: latin-1 -*-
+# -*- coding: utf-8 -*-
+
+"""
+
+  Prefix ---- a ---->  Delta2 -- d --> consume
+   ^                      |
+   |                      |
+   b                      |
+   |                      |
+  Succ <------- c --------|
+
+"""
+
 from common import *
 from apycsp import *
 from apycsp.plugNplay import *

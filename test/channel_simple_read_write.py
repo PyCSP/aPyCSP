@@ -11,6 +11,10 @@ from apycsp import Channel, process, run_CSP
 
 args = handle_common_args()
 
+# NB: necessary to support the channel patching we're doing in common/common_exp
+Channel = apycsp.Channel
+print("Running with channel type", Channel)
+
 @process
 async def writer(N, cout):
     for i in range(N):

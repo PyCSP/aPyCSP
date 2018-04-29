@@ -9,12 +9,16 @@ sys.path.append("..")
 import apycsp
 import argparse
 import asyncio
+import common_exp
 
 # Common arguments are added and handled here. The general outline for a program is to
 # use common.handle_common_args() with a list of argument specs to add. 
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument("-u", "--uvloop", help='use uvloop', action="store_const", const=True, default=False)
+argparser.add_argument("-rw_deco", help='use decorators for read/write ops on channels', action='store_const', const=True, default=False)
+argparser.add_argument("-rw_ctxt", help='use context manager for read/write ops on channels', action='store_const', const=True, default=False)
+
 
 def handle_common_args(argspecs=[]):
     """argspecs is a list of arguments for argparser.add_argument, with 
@@ -31,6 +35,10 @@ def handle_common_args(argspecs=[]):
         print("Using uvloop as an event loop")
         import uvloop
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    if args.rw_deco:
+        common_exp.set_channel_rw_decorator()
+    if args.rw_ctxt:
+        common_exp.set_channel_contextmgr()
     return args
     
 

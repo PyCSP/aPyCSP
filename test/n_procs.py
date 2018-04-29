@@ -7,13 +7,20 @@ import psutil
 import sys
 import time
 import common
-from apycsp import One2OneChannel, Any2OneChannel, One2AnyChannel, process, run_CSP
+from apycsp import process, run_CSP, Channel
+# NB: the Channel is not imported directly to support switching channel implementation in common_exp
 
 args = common.handle_common_args([
     (["np"], dict(type=int, help='number of procs', default=10, nargs="?")),
     ])
 
 N_PROCS = args.np # 10 if len(sys.argv) < 2 else int(sys.argv[1])
+
+# NB: necessary to support the channel patching we're doing in common/common_exp
+Channel = apycsp.Channel
+print("Running with channel type", Channel)
+
+
 
 @process
 async def simple_proc(pid, checkin, cin):
@@ -39,8 +46,8 @@ async def killer(chin, pch, nprocs):
 
 def run_n_procs(n):
     print(f"Running with {n} simple_procs")
-    ch = Any2OneChannel()
-    pch =  One2AnyChannel()
+    ch = Channel()
+    pch =  Channel()
     t1 = time.time()
     tasks = [simple_proc(i, ch.write, pch.read) for i in range(N_PROCS)]
     tasks.append(killer(ch.read, pch, n))
