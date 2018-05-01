@@ -43,10 +43,10 @@ async def consumer(cin, run_no):
 
 def CommsTimeBM(run_no, Delta2=Delta2):
     # Create channels
-    a = One2OneChannel("a")
-    b = One2OneChannel("b")
-    c = One2OneChannel("c")
-    d = One2OneChannel("d")
+    a = Channel("a")
+    b = Channel("b")
+    c = Channel("c")
+    d = Channel("d")
 
     rets = run_CSP(Prefix(c.read, a.write, prefixItem = 0),  # initiator
                    Delta2(a.read, b.write, d.write),         # forwarding to two

@@ -352,11 +352,6 @@ class Channel:
     async def __anext__(self):
         return await self._read()
         
-One2OneChannel = Channel
-One2AnyChannel = Channel
-Any2OneChannel = Channel
-Any2AnyChannel = Channel
-
 
 async def poisonChannel(ch):
     "Poisons a channel or a channel end"

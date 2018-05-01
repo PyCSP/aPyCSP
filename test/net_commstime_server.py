@@ -3,7 +3,7 @@ import common
 import apycsp
 import apycsp.net
 import asyncio
-from apycsp import One2OneChannel
+from apycsp import Channel
 
 # Very simple server that only hosts the channels. The CSP processes run in the client(s)
 
@@ -16,7 +16,7 @@ serv = apycsp.net.start_server(args.port)
 
 def serve_test():
     chnames = ['a', 'b', 'c', 'd']
-    chans = [One2OneChannel(n) for n in chnames]
+    chans = [Channel(n) for n in chnames]
     for c in chans:
         apycsp.net.register_channel(c, c.name)
     #loop.create_task(writer(ch1))

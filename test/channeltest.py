@@ -55,7 +55,7 @@ def o2otest():
     print("-----------------------")
     print("Testing One2One Channel")
     print("Reader and writer should both report as done")
-    c = One2OneChannel()
+    c = Channel()
     run_CSP(WN(1,c.write),
             RN(2, c.read))
 
@@ -63,7 +63,7 @@ def o2atest():
     print("-----------------------")
     print("Testing One2Any Channel")
     print("Writer should report as done, none of the readers should")
-    c = One2AnyChannel()
+    c = Channel()
     run_CSP(WN(1, c.write),
             RN(2, c.read),
             RN(3, c.read))
@@ -72,7 +72,7 @@ def a2otest():
     print("-----------------------")
     print("Testing Any2One Channel")
     print("Reader should report as done, none of the writers should")
-    c = Any2OneChannel()
+    c = Channel()
     run_CSP(WN(1, c.write),
             WN(2, c.write),
             RN(3, c.read))
@@ -83,7 +83,7 @@ def a2atest():
     print("All readers and writers should report as done")
     # TODO: potential race if one of the writers/readers finish early and poison the channel!
     # the same problem might occur above as well! 
-    c = Any2AnyChannel()
+    c = Channel()
     run_CSP(WN(1, c.write),
             WN(2, c.write),
             RN(3, c.read),
@@ -94,7 +94,7 @@ def bo2otest():
     print("-----------------------")
     print("Testing BufferedOne2One Channel")
     print("Reader and writer should both report as done")
-    c = BufferedOne2OneChannel()
+    c = BufferedChannel()
     run_CSP(FastWN(1, c.write),
             FastRN(2, c.read))
 

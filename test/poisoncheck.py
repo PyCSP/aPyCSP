@@ -30,9 +30,9 @@ async def PoisonTest(cout):
     await poisonChannel(cout)
 
 def test():
-    a = One2OneChannel("a")
-    b = One2OneChannel("b")
-    c = One2OneChannel("c")
+    a = Channel("a")
+    b = Channel("b")
+    c = Channel("c")
     d = BlackHoleChannel("d")
 
     run_CSP(PoisonTest(a.write),
@@ -57,7 +57,7 @@ async def Count(cout):
         i += 1
 
 def test2():
-    a = Any2OneChannel()
+    a = Channel()
     run_CSP(Count(a.write),
             Count(a.write),
             PoisonReader(a.read))
