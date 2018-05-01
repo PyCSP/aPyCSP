@@ -240,7 +240,10 @@ class Channel:
         return (0, obj)
 
     # TODO: moved the decorated versions of _read and _write to test/common_exp.py for easier
-    # experimenting with alternative implementations. 
+    # experimenting with alternative implementations.
+    # This is currently the fastest version that uses the least amount of memory, but the context manager version
+    # is almost as lean at an execution time cost closer to the decorator version.
+    # TODO: consider how to solve poison checking for the ALT as well. 
     async def _read(self):
         try:
             if self.poisoned:

@@ -62,9 +62,9 @@ def set_channel_rw_decorator():
 #
 # Context manager.
 #
-# This appears to have similar overheads to the decorators, but the decorator is easier to spot.
+# This appears to have similar execution time to the decorators, but the decorator is easier to spot.
 # On the other hand, this can be used inside a method which could be more flexible for ALT poison checking...
-# 
+# It uses about as much memory as the non-decorated version
 
 class PoisonChecker:
     def __init__(self, chan):
@@ -103,3 +103,46 @@ def set_channel_contextmgr():
     print("** Replacing asyncio.Channel with version with decorated read/writes")
     apycsp.Channel = Channel_W_ContextMgrOps
 
+
+
+
+#############################################################
+#
+# Variaion of context manager using the channel itself. 
+# Mainly to experiment with overheads
+# 
+            
+class Channel_W_ContextMgrOps2(apycsp.Channel):
+    def __init__(self, name="", loop=None):
+        super().__init__(name, loop)
+
+    # using context managers
+    async def _write(self, obj):
+        with self:
+            wcmd = _ChanOP('write', obj)
+            if len(self.wqueue) > 0 or len(self.rqueue) == 0:
+                return await self._wait_for_op(self.wqueue, wcmd)
+            rcmd = self.rqueue.popleft()
+            return self._rw_nowait(wcmd, rcmd)[0]
+
+    async def _read(self):
+        with self:
+            rcmd = _ChanOP('read', None)
+            if len(self.rqueue) > 0 or len(self.wqueue) == 0:
+                return await self._wait_for_op(self.rqueue, rcmd)
+            wcmd = self.wqueue.popleft()
+            return self._rw_nowait(wcmd, rcmd)[1]
+
+    # context manager for the channel checks for poison
+    def __enter__(self):
+        if self.poisoned:
+            raise ChannelPoisonException()
+        return self
+    def __exit__(self, *exc_details):
+        if self.poisoned:
+            raise ChannelPoisonException()
+        
+def set_channel_contextmgr2():
+    print("** Replacing asyncio.Channel with version with decorated read/writes")
+    apycsp.Channel = Channel_W_ContextMgrOps2
+    
