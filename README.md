@@ -37,6 +37,13 @@ Using the asyncio version, we need to write:
     print("Got result from alt: ", val)
 ```
 
+Some of the main advantages of this version compared to the multithreaded version are:
+* support for input _and_ output guards
+* arbitrary number of readers, writers and guarded reads and writes (through ALT) can be queued on channel ends
+* there is no need for specific channel types that limit the number of readers and writers
+* the implementation is faster and uses less memory per @process. 
+* It is also easier to read and understand, partly due to reduced complexity. 
+
 
 The other implementations are available as follows: 
 - the lock based asyncio version: [https://github.com/jmbjorndalen/aPyCSP_lockver](https://github.com/jmbjorndalen/aPyCSP_lockver)
