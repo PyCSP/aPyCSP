@@ -250,9 +250,9 @@ class Channel:
                 return
             rcmd = _ChanOP('read', None)
             if len(self.rqueue) > 0 or len(self.wqueue) == 0:
-                # readers ahead of us, or no writiers
+                # readers ahead of us, or no writers
                 return await self._wait_for_op(self.rqueue, rcmd)
-            # find matchin write cmd.
+            # find matching write cmd.
             wcmd = self.wqueue.popleft()
             return self._rw_nowait(wcmd, rcmd)[1]
         finally:

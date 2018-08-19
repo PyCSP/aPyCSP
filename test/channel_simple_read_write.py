@@ -58,9 +58,9 @@ run_CSP(writer(N, c.write),
 
 def run_timing(read_end, write_end):
     dts = []
-    for i in range(5):
+    for i in range(100):
         N = 1000
-        print(f"Run {i}:", end="")
+        print(f"  Run {i}:", end="")
         #t1 = time.time()
         run_CSP(writer_timed(N, write_end),
                 reader_timed(N, read_end))
