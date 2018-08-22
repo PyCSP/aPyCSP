@@ -58,19 +58,23 @@ async def p2(cout):
 
 
 def AltTest():
+    print("------------- AltTest ----------------")
     run_CSP(AltTest_p())
     
 def AltTest2():
+    print("------------- AltTest2 ----------------")
     c = Channel('ch2')
     run_CSP(p1(c.read),
             p2(c.write))
     
 def AltTest3():
+    print("------------- AltTest3 ----------------")
     c = Channel('ch3')
     run_CSP(p1_b(c.read),
             p2(c.write))
 
 def AltTest4():
+    print("------------- AltTest4 ----------------")
     c = Channel('ch4')
     run_CSP(alt_writer(c.write),
             p1(c.read))

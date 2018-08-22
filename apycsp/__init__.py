@@ -4,6 +4,7 @@
 import asyncio
 import collections
 import functools
+import sys
 #import inspect
 
 
@@ -173,8 +174,13 @@ class ChannelReadEnd(ChannelEnd, Guard):
     def __repr__(self):
         return "<ChannelReadEnd wrapping %s>" % self._chan
     # support async for ch.read: 
-    async def __aiter__(self):
-        return self
+    if sys.version_info >= (3,7,0):
+        print("Using 3.7 version of aiter")
+        def __aiter__(self):
+            return self
+    else:
+        async def __aiter__(self):
+            return self
     async def __anext__(self):
         return await self._chan._read()
 
@@ -350,8 +356,13 @@ class Channel:
         
 
     # support async for channel:
-    async def __aiter__(self):
-        return self
+    if sys.version_info >= (3,7,0):
+        print("Using 3.7 version of aiter")
+        def __aiter__(self):
+            return self
+    else:
+        async def __aiter__(self):
+            return self
     async def __anext__(self):
         return await self._read()
         
@@ -474,7 +485,19 @@ class Alternative:
         """A wake-up call to processes ALTing on guards controlled by this object.
         Called by the (self) selected guard."""
         if self.state != self._ALT_WAITING:
-            raise f"Error: running schedule on an ALT that was in state {self.state} instead of waiting."
+            # So far, this has only occurred with a single process that tries to alt on both the read and write end
+            # of the same channel. In that case, the first guard is enabled but has to wait, and the second
+            # guard matches up with the first guard. They are both in the same ALT which is now in an enabling phase.
+            # If a wguard enter first, the rguard will remove the wguard (flagged as an ALT), match it with the
+            # read (flagged as RD). rw_nowait will try to run schedule() on the wguard's ALT (the same ALT as the rguard's ALT)
+            # which is still in the enabling phase.
+            # We could get around this by checking if both ends reference the same ALT, but it would be more complicated code,
+            # and (apart from rendesvouz with yourself) the semantics of reading and writing from the channel
+            # is confusing. You could end up writing without observing the result (the read has, strictly speaking,
+            # completed though). 
+            msg = f"Error: running schedule on an ALT that was in state {self.state} instead of waiting."
+            raise Exception(msg)
+            #return
         # NB: It should be safe to set_result as long as we don't yield in it
         self.wait_fut.set_result((guard, ret))
         self._disableGuards()
