@@ -275,7 +275,7 @@ class Channel:
                 # a) Somebody else is already waiting to write, so we're not going to
                 #    change the situation any with this write. simply append ourselves and wait
                 #    for somebody to wake us up with the result.
-                # b) nobody is waiting for our write.
+                # b) nobody is waiting for our write. (TODO: buffered channels)
                 return await self._wait_for_op(self.wqueue, wcmd)
             # Find matching read cmd. 
             rcmd = self.rqueue.popleft()
@@ -382,7 +382,7 @@ async def poisonChannel(ch):
 # - ALT writes should be considered as successful and transformed into normal
 #   writes if there is room in the buffer, otherwise, we will have to
 #   consider them again when there is room. 
-# - Shen write ops are retired, we need to consdier waking up alts and writes
+# - When write ops are retired, we need to consdier waking up alts and writes
 #   that are sleeping on a write.
 class BufferedChannel(Channel):
     """Buffered Channel. """
@@ -406,7 +406,7 @@ class BufferedChannel(Channel):
     
 # ******************** ALT ********************
 #
-# This differs from the thread-based implementation in the following way:
+# This differs from the old thread-based implementation in the following way:
 # 1. Guards are enabled, stopping on the first ready guard if any.
 # 2. If the alt is waiting for a guard to go ready, the first guard to
 #    switch to ready will immediately jump into the ALT and execute the necessary bits
@@ -501,7 +501,6 @@ class Alternative:
             # completed though). 
             msg = f"Error: running schedule on an ALT that was in state {self.state} instead of waiting."
             raise Exception(msg)
-            #return
         # NB: It should be safe to set_result as long as we don't yield in it.
         self.wait_fut.set_result((guard, ret))
         self._disableGuards()
