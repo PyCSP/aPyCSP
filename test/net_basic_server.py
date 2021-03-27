@@ -4,17 +4,16 @@ import common
 import apycsp
 import apycsp.net
 import asyncio
+# import sigpauser
 
 args = common.handle_common_args([
     (("-p", "--port"), dict(help="specify port number (alternatively host:port) to bind server to", action="store", default="8890"))
 ])
 common.handle_common_args()
 
-if 0:
-    import sigpauser
-
 loop = asyncio.get_event_loop()
 serv = apycsp.net.start_server(args.port)
+
 
 @apycsp.process
 async def writer(ch):
@@ -24,10 +23,12 @@ async def writer(ch):
         print("Server about to write", i)
         await ch.write(f"This is message {i}")
 
+
 @apycsp.process
 async def silent_writer(ch):
     while True:
         await ch.write(42)
+
 
 def serve_test():
     ch1 = apycsp.Channel('net_t1')
@@ -37,8 +38,9 @@ def serve_test():
     loop.create_task(writer(ch1))
     loop.create_task(silent_writer(ch2))
 
+
 serve_test()
-    
+
 try:
     loop.run_forever()
 except KeyboardInterrupt:

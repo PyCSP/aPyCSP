@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-# -*- coding: latin-1 -*-
+# -*- coding: utf-8 -*-
 """
-Copyright (c) 2018 John Markus Bjørndalen, jmb@cs.uit.no.
+Copyright (c) 2018 John Markus BjÃ¸rndalen, jmb@cs.uit.no.
 See LICENSE.txt for licensing details (MIT License).
 """
-from common import *
-from apycsp import *
-from apycsp.plugNplay import *
-import time
+import asyncio
+from common import handle_common_args
+from apycsp import process, BufferedChannel, Channel, ChannelPoisonException, poisonChannel, run_CSP
+# from apycsp.plugNplay import *
 
 handle_common_args()
 
 N = 5
+
 
 @process
 async def WN(pid, cout):
@@ -22,14 +23,16 @@ async def WN(pid, cout):
     print("Writer [%s] wrote all" % pid)
     await poisonChannel(cout)
 
+
 @process
 async def RN(pid, cin):
-    for i in range(N):
+    for _ in range(N):
         v = await cin()
         print("  [%s] Reading %d" % (pid, v))
         await asyncio.sleep(0.1)
     print("Reader [%s] got all" % pid)
     await poisonChannel(cin)
+
 
 # TODO: Robert
 @process
@@ -37,9 +40,10 @@ async def FastWN(pid, cout):
     for i in range(50):
         print("  [%s] Writing %d" % (pid, i))
         await cout(i)
-        #await asyncio.sleep(0.1)
+        # await asyncio.sleep(0.1)
     print("Writer [%s] wrote all" % pid)
     await poisonChannel(cout)
+
 
 # TODO: Robert
 @process
@@ -51,13 +55,15 @@ async def FastRN(pid, cin):
     except ChannelPoisonException:
         print('Reader [%s] caught poison exception' % pid)
 
+
 def o2otest():
     print("-----------------------")
     print("Testing One2One Channel")
     print("Reader and writer should both report as done")
     c = Channel()
-    run_CSP(WN(1,c.write),
+    run_CSP(WN(1, c.write),
             RN(2, c.read))
+
 
 def o2atest():
     print("-----------------------")
@@ -67,7 +73,8 @@ def o2atest():
     run_CSP(WN(1, c.write),
             RN(2, c.read),
             RN(3, c.read))
-    
+
+
 def a2otest():
     print("-----------------------")
     print("Testing Any2One Channel")
@@ -77,12 +84,13 @@ def a2otest():
             WN(2, c.write),
             RN(3, c.read))
 
+
 def a2atest():
     print("-----------------------")
     print("Testing Any2Any Channel")
     print("All readers and writers should report as done")
     # TODO: potential race if one of the writers/readers finish early and poison the channel!
-    # the same problem might occur above as well! 
+    # the same problem might occur above as well!
     c = Channel()
     run_CSP(WN(1, c.write),
             WN(2, c.write),

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-# -*- coding: latin-1 -*-
-# Copyright (c) 2018 John Markus Bjørndalen, jmb@cs.uit.no.
-# See LICENSE.txt for licensing details (MIT License). 
+# -*- coding: utf-8 -*-
+# Copyright (c) 2018 John Markus BjÃ¸rndalen, jmb@cs.uit.no.
+# See LICENSE.txt for licensing details (MIT License).
 
-from common import *
-from apycsp import *
+from common import handle_common_args
+from apycsp import process, Alternative, Channel, run_CSP, Skip
 
 handle_common_args()
+
 
 @process
 async def AltTest_p():
@@ -17,21 +18,23 @@ async def AltTest_p():
     ret = await alt.select()
     print("Returned from alt.select():", ret)
 
+
 @process
 async def p1(cin):
     print("Bip 1")
     alt = Alternative(cin)
     for i in range(10):
         print(f"p1: ding {i}")
-        g, ret = await alt.select()
+        _, ret = await alt.select()
         print("p1: got from select:", ret, type(ret))
 
-# Same as above, but demonstrates the async with syntax. 
+
+# Same as above, but demonstrates the async with syntax.
 @process
 async def p1_b(cin):
     print("Bip 1")
     alt = Alternative(cin)
-    for i in range(10):
+    for _ in range(10):
         print("ding 1")
         async with alt as (g, val):
             print("p1_b: got from select:", g, type(g), val)
@@ -48,9 +51,9 @@ async def alt_writer(cout):
         ret = await alt.select()
         print(" -- alt_writer done, got ", ret)
         print(" ** ch queues : ", cout._chan.rqueue, cout._chan.wqueue)
-        
-        
-@process    
+
+
+@process
 async def p2(cout):
     print("Bip 2")
     for i in range(10):
@@ -60,24 +63,28 @@ async def p2(cout):
 def AltTest():
     print("------------- AltTest ----------------")
     run_CSP(AltTest_p())
-    
+
+
 def AltTest2():
     print("------------- AltTest2 ----------------")
     c = Channel('ch2')
     run_CSP(p1(c.read),
             p2(c.write))
-    
+
+
 def AltTest3():
     print("------------- AltTest3 ----------------")
     c = Channel('ch3')
     run_CSP(p1_b(c.read),
             p2(c.write))
 
+
 def AltTest4():
     print("------------- AltTest4 ----------------")
     c = Channel('ch4')
     run_CSP(alt_writer(c.write),
             p1(c.read))
+
 
 AltTest()
 AltTest2()
