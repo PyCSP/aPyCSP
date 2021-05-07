@@ -105,11 +105,11 @@ class Timer(Guard):
         self.alt = None
         self.seconds = seconds
         self.cb = None
-
+        self.loop = asyncio.get_event_loop()
+        
     def enable(self, alt):
         self.alt = alt
-        loop = asyncio.get_event_loop()
-        self.cb = loop.call_later(self.seconds, self.expire)
+        self.cb = self.loop.call_later(self.seconds, self.expire)
         return (False, None)
 
     def disable(self, alt):
@@ -118,9 +118,9 @@ class Timer(Guard):
         self.cb.cancel()
         self.alt = None
 
-    async def expire(self):
+    def expire(self, ret=None):
         self.expired = True
-        self.alt.schedule(self)
+        self.alt.schedule(self, ret)
 
 
 # ******************** Channels ********************
