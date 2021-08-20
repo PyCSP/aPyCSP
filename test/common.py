@@ -5,11 +5,9 @@
 
 # trick to allow us to import pycsp without setting PYTHONPATH
 import sys
-sys.path.append("..")
 import argparse
-import asyncio
-import apycsp
-import common_exp
+sys.path.append("..")
+import common_exp      # noqa E402  -- suppress flake8 warning
 
 # Common arguments are added and handled here. The general outline for a program is to
 # use common.handle_common_args() with a list of argument specs to add.

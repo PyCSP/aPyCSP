@@ -57,4 +57,4 @@ def CommsTimeBM():
     return rets[-1]
 
 
-time = CommsTimeBM()
+ct_time = CommsTimeBM()

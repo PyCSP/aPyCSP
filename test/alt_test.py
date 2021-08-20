@@ -52,6 +52,7 @@ async def alt_writer(cout):
         print(" -- alt_writer done, got ", ret)
         print(" ** ch queues : ", cout._chan.rqueue, cout._chan.wqueue)
 
+
 @process
 async def alt_timer(cin):
     print("This is alttimer")
@@ -64,11 +65,13 @@ async def alt_timer(cin):
         else:
             print("alttimer: timeout")
 
+
 @process
 async def writer(cout):
     print("This is writer")
     await asyncio.sleep(0.500)
     await cout("ping")
+
 
 @process
 async def p2(cout):
@@ -102,11 +105,13 @@ def AltTest4():
     run_CSP(alt_writer(c.write),
             p1(c.read))
 
+
 def AltTest5():
     print("------------- AltTest5 ----------------")
     c = Channel('ch5')
     run_CSP(alt_timer(c.read),
             writer(c.write))
+
 
 AltTest()
 AltTest2()

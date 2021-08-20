@@ -2,7 +2,6 @@
 
 import apycsp
 from apycsp import chan_poisoncheck, _ChanOP, ChannelPoisonException
-import common
 
 # experimental implementation tricks for aPyCSP
 

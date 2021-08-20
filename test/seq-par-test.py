@@ -5,7 +5,6 @@
 
 from common import handle_common_args
 from apycsp import process, Parallel, run_CSP, Sequence
-from apycsp.plugNplay import *
 
 handle_common_args()
 

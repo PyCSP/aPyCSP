@@ -16,11 +16,12 @@ import os
 import time
 from common import handle_common_args
 import apycsp
-from apycsp import process, Channel, run_CSP
+from apycsp import process, run_CSP
 from apycsp.plugNplay import Delta2, Prefix, Successor
 
 print("--------------------- Commstime --------------------")
 handle_common_args()
+Channel = apycsp.Channel    # in case command line arguments replaced the Channel def
 
 
 @process

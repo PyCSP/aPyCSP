@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
-import common
+import common   # noqa F401
 from apycsp import process
 
 

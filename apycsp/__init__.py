@@ -106,7 +106,7 @@ class Timer(Guard):
         self.seconds = seconds
         self.cb = None
         self.loop = asyncio.get_event_loop()
-        
+
     def enable(self, alt):
         self.alt = alt
         self.cb = self.loop.call_later(self.seconds, self.expire)
@@ -315,14 +315,14 @@ class Channel:
         """Poison a channel and wake up all ops in the queues so they can catch the poison."""
         # This doesn't need to be an async method any longer, but we
         # keep it like this to simplify poisoning of remote channels.
-        if self.poisoned:
-            return
-
         def poison_queue(queue):
             while len(queue) > 0:
                 op = queue.popleft()
                 if op.fut:
                     op.fut.set_result(None)
+
+        if self.poisoned:
+            return
         self.poisoned = True
         poison_queue(self.wqueue)
         poison_queue(self.rqueue)

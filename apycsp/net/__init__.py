@@ -324,7 +324,7 @@ class _RemoteChanProxy(_RemoteChan):
 
 
 _rchan_reg = {}  # connections to use to reach a remote channel. Indexed by channel name.
-async def _find_remote(name):
+async def _find_remote(name):    # noqa E302
     """Find connection for a remote channel. """
     # TODO: this fails if we allow remote channels to move, or if we reconnect to the remote server
     if name in _rchan_reg:
