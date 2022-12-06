@@ -18,6 +18,7 @@ from common import handle_common_args
 import apycsp
 from apycsp import process, run_CSP
 from apycsp.plugNplay import Delta2, Prefix, Successor
+import sys
 
 print("--------------------- Commstime --------------------")
 handle_common_args()
@@ -64,13 +65,17 @@ def run_bm(Delta2=apycsp.plugNplay.Delta2):
     tchans = []
     for i in range(N_BM):
         tchans.append(CommsTimeBM(i, Delta2))
-    print("Min {:7.3f}  Avg {:7.3f} Max {:7.3f}".format(1_000_000 * min(tchans),
-                                                        1_000_000 * sum(tchans) / len(tchans),
-                                                        1_000_000 * max(tchans)))
+    t_min = 1_000_000 * min(tchans)
+    t_avg = 1_000_000 * sum(tchans) / len(tchans)
+    t_max = 1_000_000 * max(tchans)
+    print(f"Min {t_min:7.3f}  Avg {t_avg:7.3f} Max {t_max:7.3f}")
+    return (t_min, t_avg, t_max)
 
 
-run_bm(apycsp.plugNplay.ParDelta2)
-run_bm(apycsp.plugNplay.SeqDelta2)
+tpd = run_bm(apycsp.plugNplay.ParDelta2)
+tsd = run_bm(apycsp.plugNplay.SeqDelta2)
+print("For easier markdown tables:")
+print("| " + " | ".join([" ".join(sys.argv)] + [f"{v:7.3f}" for v in tpd + tsd]) + " |")
 # A bit of a hack, but windows does not have uname()
 try:
     os.uname()

@@ -100,8 +100,6 @@ class Skip(Guard):
 class Timer(Guard):
     def __init__(self, seconds):
         self.expired = False
-        # TODO: to make it more general, allow 'alt' to be an op code queue? It wouldn't quite fit as enable() starts
-        # the timer, so we'd need a timer per queued opcode in that case.
         self.alt = None
         self.seconds = seconds
         self.cb = None
@@ -113,8 +111,6 @@ class Timer(Guard):
         return (False, None)
 
     def disable(self, alt):
-        # TODO: is cb.cancel() enough to make sure expire is not called after this?
-        # TODO: should add a state flag to make sure we don't try to run alt.schedule after it's canceled.
         self.cb.cancel()
         self.alt = None
 
@@ -341,7 +337,7 @@ class Channel:
         # TODO: one option _could_ be to use an ordered dict (new dicts are ordered as well), but we would need to
         # have a unique key that can be used to cancel commands later (and remove the first entry when popping)
         # collections.OrderedDict() has a popitem() method.
-        return collections.deque(filter(lambda op: not(op.cmd == 'ALT' and op.alt == alt), queue))
+        return collections.deque(filter(lambda op: not (op.cmd == 'ALT' and op.alt == alt), queue))
 
     # TODO: read and write alts needs poison check, but we need de-register guards properly before we
     # consider throwing an exception.
