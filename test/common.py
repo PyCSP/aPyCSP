@@ -3,10 +3,9 @@
 # Copyright (c) 2018 John Markus Bjørndalen, jmb@cs.uit.no.
 # See LICENSE.txt for licensing details (MIT License).
 
-# trick to allow us to import pycsp without setting PYTHONPATH
-import sys
 import argparse
-sys.path.append("..")
+import sys
+sys.path.append("..")  # Trick to import pycsp without setting PYTHONPATH
 import common_exp      # noqa E402  -- suppress flake8 warning
 
 # Common arguments are added and handled here. The general outline for a program is to

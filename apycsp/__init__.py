@@ -14,6 +14,21 @@ class ChannelPoisonException(Exception):
     pass
 
 
+def chan_poisoncheck(func):
+    "Decorator for making sure that poisoned channels raise exceptions."
+    # NB: The await here is necessary to be able to check for channel poison both before
+    # and after completing the execution of the function.
+    @functools.wraps(func)
+    async def p_wrap(self, *args, **kwargs):
+        try:
+            if not self.poisoned:
+                return await func(self, *args, **kwargs)
+        finally:
+            if self.poisoned:
+                raise ChannelPoisonException()
+    return p_wrap
+
+
 def process(func):
     """Annotates a coroutine as a process and takes care of poison propagation. """
     @functools.wraps(func)
@@ -25,22 +40,6 @@ def process(func):
             for ch in [x for x in args if isinstance(x, (ChannelEnd, Channel))]:
                 await ch.poison()
     return proc_wrapped
-
-
-def chan_poisoncheck(func):
-    "Decorator for making sure that poisoned channels raise exceptions."
-    # NB: we need to await here as we need to check for exceptions. If we
-    # just create a coroutine and return it directly, we will fail to
-    # catch exceptions in the wrapper.
-    @functools.wraps(func)
-    async def p_wrap(self, *args, **kwargs):
-        try:
-            if not self.poisoned:
-                return await func(self, *args, **kwargs)
-        finally:
-            if self.poisoned:
-                raise ChannelPoisonException()
-    return p_wrap
 
 
 def run_CSP(*procs):
@@ -380,7 +379,7 @@ class Channel:
         """Removes the ALT from the writer queue."""
         self.wqueue = self._remove_alt_from_pqueue(self.wqueue, alt)
 
-    # Support async for channel:
+    # Support iteration over channel to read from it (async for):
     if sys.version_info >= (3, 7, 0):
         # Python 3.7 changed the interface for aiter.
         def __aiter__(self):
