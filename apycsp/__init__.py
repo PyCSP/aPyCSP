@@ -5,7 +5,6 @@ import asyncio
 import collections
 import functools
 import sys
-# import inspect
 
 
 # ******************** Core code ********************
@@ -16,12 +15,12 @@ class ChannelPoisonException(Exception):
 
 def chan_poisoncheck(func):
     "Decorator for making sure that poisoned channels raise exceptions."
-    # NB: The await here is necessary to be able to check for channel poison both before
-    # and after completing the execution of the function.
     @functools.wraps(func)
     async def p_wrap(self, *args, **kwargs):
         try:
             if not self.poisoned:
+                # NB: The await here is necessary to be able to check for channel poison both before
+                # and after completing the execution of the function.
                 return await func(self, *args, **kwargs)
         finally:
             if self.poisoned:
@@ -30,7 +29,7 @@ def chan_poisoncheck(func):
 
 
 def process(func):
-    """Annotates a coroutine as a process and takes care of poison propagation. """
+    """Annotates a coroutine as a process and takes care of poison propagation."""
     @functools.wraps(func)
     async def proc_wrapped(*args, **kwargs):
         try:
@@ -51,7 +50,7 @@ def run_CSP(*procs):
 
 
 def run_CSP_seq(*procs):
-    """Runs the CSP processes in one by one (equivalent to a SEQ).
+    """Runs the CSP processes one by one (equivalent to a SEQ).
     Intended to be used by the outer sequential program that starts running a CSP network.
     """
     loop = asyncio.get_event_loop()
@@ -208,6 +207,8 @@ class ChannelReadEnd(ChannelEnd, Guard):
 
 class _ChanOP:
     """Used to store channel cmd/ops for the op queues."""
+    __slots__ = ['cmd', 'obj', 'fut', 'alt', 'wguard']    # reduce some overhead
+
     def __init__(self, cmd, obj, alt=None):
         self.cmd = cmd
         self.obj = obj
@@ -268,18 +269,23 @@ class Channel:
             rcmd.alt.schedule(self.read, obj)
         return (0, obj)
 
+    # NB: The way the channels currently work, the write and read queues are
+    # either both empty or one of them is empty. Both cannot have operations
+    # queued in them at the same time since both read and write checks the
+    # other queue and immediately matches an operation if there is something in
+    # the other queue.
     # TODO: moved the decorated versions of _read and _write to test/common_exp.py for easier
     # experimenting with alternative implementations.
     # This is currently the fastest version that uses the least amount of memory, but the context manager version
     # is almost as lean at an execution time cost closer to the decorator version.
-    # TODO: consider how to solve poison checking for the ALT as well.
     async def _read(self):
         try:
             if self.poisoned:
-                return
+                return    # NBhis should raise a poison exception due to the finally clause.
+
             rcmd = _ChanOP('read', None)
-            if len(self.rqueue) > 0 or len(self.wqueue) == 0:
-                # Readers ahead of us, or no writers.
+            if len(self.wqueue) == 0 or len(self.rqueue) > 0:
+                # No write to match up with. Wait.
                 return await self._wait_for_op(self.rqueue, rcmd)
             # Find matching write cmd.
             wcmd = self.wqueue.popleft()
@@ -292,12 +298,10 @@ class Channel:
         try:
             if self.poisoned:
                 return
+
             wcmd = _ChanOP('write', obj)
-            if len(self.wqueue) > 0 or len(self.rqueue) == 0:
-                # a) Somebody else is already waiting to write, so we're not going to
-                #    change the situation any with this write. simply append ourselves and wait
-                #    for somebody to wake us up with the result.
-                # b) nobody is waiting for our write. (TODO: buffered channels)
+            if len(self.rqueue) == 0 or len(self.wqueue) > 0:
+                # No read to match up with. Wait.
                 return await self._wait_for_op(self.wqueue, wcmd)
             # Find matching read cmd.
             rcmd = self.rqueue.popleft()
@@ -325,32 +329,21 @@ class Channel:
     def _remove_alt_from_pqueue(self, queue, alt):
         """Common method to remove an alt from the read or write queue."""
         # TODO: this is inefficient, but should be ok for now.
-        # A slightly faster alternative might be to store a reference to the cmd in a dict
-        # with the alt as key, and then use deque.remove(cmd).
-        # An alt may have multiple channels, and a guard may be used by multiple alts, so
-        # there is no easy place for a single cmd to be stored in either.
-        # Deque now supports del deq[something], and deq.remove(), but need to find the obj first.
-        #
-        # print("......remove_alt_pq : ", queue, list(filter(lambda op: not(op.cmd == 'ALT' and op.alt == alt), queue)))
-        #
-        # TODO: one option _could_ be to use an ordered dict (new dicts are ordered as well), but we would need to
-        # have a unique key that can be used to cancel commands later (and remove the first entry when popping)
-        # collections.OrderedDict() has a popitem() method.
-        return collections.deque(filter(lambda op: not (op.cmd == 'ALT' and op.alt == alt), queue))
+        # Since a user could, technically, submit more than one operation to the same queue with an alt, it is
+        # necessary to support removing more than one operation on the same alt.
+        # return collections.deque(filter(lambda op: not (op.cmd == 'ALT' and op.alt == alt), queue))
+        return collections.deque(filter(lambda op: op.alt != alt, queue))
 
-    # TODO: read and write alts needs poison check, but we need de-register guards properly before we
-    # consider throwing an exception.
+    # TODO: read and write alts needs poison check, but all guards have to be de-registered properly before
+    # throwing an exception.
     def renable(self, alt):
         """enable for the input/read end"""
-        if len(self.rqueue) > 0 or len(self.wqueue) == 0:
-            # Reader ahead of us or no writers.
-            # The code is similar to _read(), and we
-            # need to enter the ALT as a potential reader
+        if len(self.wqueue) == 0 or len(self.rqueue) > 0:
+            # Can't match the operation on the other queue, so it must be queued.
             rcmd = _ChanOP('ALT', None, alt=alt)
             self.rqueue.append(rcmd)
             return (False, None)
-        # We have a waiting writer that we can match up with, so we execute the read and return
-        # the  read value as well as True for the guard.
+        # Found a matching writer. Execute the read and return the read value as well as True for the guard.
         # Make sure it's treated as a read to avoid having rw_nowait trying to call schedule.
         rcmd = _ChanOP('read', None)
         wcmd = self.wqueue.popleft()
@@ -363,8 +356,8 @@ class Channel:
 
     def wenable(self, alt, pguard):
         """Enable write guard."""
-        if len(self.wqueue) > 0 or len(self.rqueue) == 0:
-            # Can't execute the write directly, so we queue the write guard.
+        if len(self.rqueue) == 0 or len(self.wqueue) > 0:
+            # Can't execute the write directly. Queue the write guard.
             wcmd = _ChanOP('ALT', pguard.obj, alt=alt)
             wcmd.wguard = pguard
             self.wqueue.append(wcmd)
@@ -397,6 +390,13 @@ async def poisonChannel(ch):
     await ch.poison()
 
 
+# TODO: strictly speaking, asyncio provides both synchronous and async/buffered queueing on the channel out of the box.
+# - for synchronous - wait for the operation to complete (be mached with a read/write)
+# - for queued - submit n operations and wait for them to complete later.
+# - for the programmer, there is usually not much of a difference waiting on a lock to be allowed into the
+#   channel and being queued on the channel.
+# - the main difference is the semantics of ALT (see below) and whether a write should be considered completed if it is
+#    written on a channel.
 # TODO:
 # - This could be an option on the normal channel.
 #   (we could just reassign the _write on channels with buffer set).
@@ -414,7 +414,7 @@ class BufferedChannel(Channel):
     @chan_poisoncheck
     async def _write(self, obj):
         wcmd = _ChanOP('write', obj)
-        if len(self.wqueue) > 0 or len(self.rqueue) == 0:
+        if len(self.rqueue) == 0 or len(self.wqueue) > 0:
             # a) Somebody else is already waiting to write, so we're not going to
             #    change the situation any with this write.
             # b) Nobody is waiting for our write.
@@ -428,37 +428,37 @@ class BufferedChannel(Channel):
 
 # ******************** ALT ********************
 #
-# This differs from the old thread-based implementation in the following way:
-# 1. Guards are enabled, stopping on the first ready guard if any.
-# 2. If the alt is waiting for a guard to go ready, the first guard to
-#    switch to ready will immediately jump into the ALT and execute the necessary bits
-#    to resolve and execute operations (like read in a channel).
-#    This is possible as there is no lock and we're running single-threaded code.
-#    This means that searching for guards in disableGuards is no longer necessary.
-# 3. disableGuards is simply cleanup code removing the ALT from the guards.
-# This requires that all guard code is synchronous.
-#
-# NB:
-#
-# - This implementation should be able to support multiple ALT readers
-#   on a channel (the first one will be resolved).
-# - As we're resolving everything in a synchronous function and no
-#   longer allow multiple guards to go true at the same time, it
-#   should be safe to allow ALT writers and ALT readers in the same
-#   channel!
-# - Don't let anything yield while runnning enable, disable priselect.
-#   NB: that would not let us run remote ALTs/Guards... but the reference implementation cannot
-#   do this anyway (there is no callback for schedule()).
-
-
 class Alternative:
+    """Alternative. Selects from a list of guards.
+
+    This differs from the old thread-based implementation in the following way:
+    1. Guards are enabled, stopping on the first ready guard if any.
+    2. If the alt is waiting for a guard to go ready, the first guard to
+       switch to ready will immediately jump into the ALT and execute the necessary bits
+       to resolve and execute operations (like read in a channel).
+       This is possible as there is no lock and we're running single-threaded code.
+       This means that searching for guards in disableGuards is no longer necessary.
+    3. disableGuards is simply cleanup code removing the ALT from the guards.
+    This requires that all guard code is synchronous / atomic.
+
+    NB:
+    - This implementation supports multiple ALT readers on a channel
+      (the first one will be resolved).
+    - As everything is resolved atomically it is safe to allow allow
+      ALT writers and ALT readers in the same channel.
+    - The implementation does not, however, support a single Alt to send a read
+      _and_ a write to the same channel as they might both resolve.
+      That would require the select() function to return more than one guard.
+    - Don't let anything yield while runnning enable, disable priselect.
+      NB: that would not let us run remote ALTs/Guards... but the reference implementation cannot
+      do this anyway (there is no callback for schedule()).
+    """
     # States for the Alternative construct.
     _ALT_INACTIVE = "inactive"
     _ALT_READY    = "ready"
     _ALT_ENABLING = "enabling"
     _ALT_WAITING  = "waiting"
 
-    """Alternative. Selects from a list of guards."""
     def __init__(self, *guards):
         self.guards = guards
         self.state = self._ALT_INACTIVE
