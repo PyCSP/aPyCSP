@@ -16,6 +16,7 @@ argparser.add_argument("-u", "--uvloop", help='use uvloop', action="store_const"
 argparser.add_argument("-rw_deco", help='use decorators for read/write ops on channels', action='store_const', const=True, default=False)
 argparser.add_argument("-rw_ctxt", help='use context manager for read/write ops on channels', action='store_const', const=True, default=False)
 argparser.add_argument("-rw_ctxt2", help='use context manager in the channel for read/write ops on channels', action='store_const', const=True, default=False)
+argparser.add_argument("-rw_ctxt3", help='use context manager (contextlib based) for read/write ops on channels', action='store_const', const=True, default=False)
 
 
 def handle_common_args(argspecs=None):
@@ -42,6 +43,8 @@ def handle_common_args(argspecs=None):
         common_exp.set_channel_contextmgr()
     if args.rw_ctxt2:
         common_exp.set_channel_contextmgr2()
+    if args.rw_ctxt3:
+        common_exp.set_channel_contextlib_manager()
     return args
 
 

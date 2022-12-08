@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from contextlib import contextmanager
 import apycsp
 from apycsp import chan_poisoncheck, _ChanOP, ChannelPoisonException
 
@@ -100,7 +101,7 @@ class Channel_W_ContextMgrOps(apycsp.Channel):
 
 
 def set_channel_contextmgr():
-    print("** Replacing asyncio.Channel with version with decorated read/writes")
+    print("** Replacing asyncio.Channel with version with context manager object")
     apycsp.Channel = Channel_W_ContextMgrOps
 
 
@@ -140,5 +141,43 @@ class Channel_W_ContextMgrOps2(apycsp.Channel):
 
 
 def set_channel_contextmgr2():
-    print("** Replacing asyncio.Channel with version with decorated read/writes")
+    print("** Replacing asyncio.Channel with version with context manager on the channel")
     apycsp.Channel = Channel_W_ContextMgrOps2
+
+
+# ############################################################
+#
+# Context manager using contextlib.contextmanager
+#
+
+@contextmanager
+def chan_poisoncheck(chan):
+    if chan.poisoned:
+        raise ChannelPoisonException()
+    yield chan
+    if chan.poisoned:
+        raise ChannelPoisonException()
+
+
+class Channel_W_Contextlib_Manager(apycsp.Channel):
+    # using context managers
+    async def _write(self, obj):
+        with chan_poisoncheck(self):
+            wcmd = _ChanOP('write', obj)
+            if len(self.wqueue) > 0 or len(self.rqueue) == 0:
+                return await self._wait_for_op(self.wqueue, wcmd)
+            rcmd = self.rqueue.popleft()
+            return self._rw_nowait(wcmd, rcmd)[0]
+
+    async def _read(self):
+        with chan_poisoncheck(self):
+            rcmd = _ChanOP('read', None)
+            if len(self.rqueue) > 0 or len(self.wqueue) == 0:
+                return await self._wait_for_op(self.rqueue, rcmd)
+            wcmd = self.wqueue.popleft()
+            return self._rw_nowait(wcmd, rcmd)[1]
+
+
+def set_channel_contextlib_manager():
+    print("** Replacing asyncio.Channel with contextlib based contextmanager")
+    apycsp.Channel = Channel_W_Contextlib_Manager
