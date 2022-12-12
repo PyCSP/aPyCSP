@@ -31,5 +31,11 @@ def conthandler(signum, frame):
 
 signal.signal(signal.SIGUSR1, pausehandler)
 signal.signal(signal.SIGUSR2, conthandler)
+thispid = os.getpid()
 # signal.pause() # wait until a signal is received.
-print("Pid of this process : ", os.getpid())
+print(f"Pid of this process : {thispid}")
+print(f"kill -USR1 {thispid}  to pause")
+print(f"kill -USR2 {thispid}  to continue")
+for i in range(30):
+    print(i)
+    time.sleep(1)

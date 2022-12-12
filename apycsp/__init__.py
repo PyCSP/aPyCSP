@@ -212,7 +212,7 @@ class _ChanOP:
     def __init__(self, cmd, obj, alt=None):
         self.cmd = cmd
         self.obj = obj
-        self.fut = None    # future is used for commands that have to wait
+        self.fut = None   # Future is used for commands that have to wait
         self.alt = alt
 
     def __repr__(self):

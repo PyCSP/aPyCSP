@@ -1,22 +1,41 @@
-# aPyCSP
+aPyCSP - PyCSP using coroutines and asyncio.
+============================================
 
-Experimental version of the 0.3 line of PyCSP using asyncio. 
+This is one of the two most up to date implementations of PyCSP. 
+The other one is the thread based implementation at
+[https://github.com/PyCSP/PyCSP-locksharing](https://github.com/PyCSP/PyCSP-locksharing).
 
-The initial implementation of this library was kept close to the the
-PyCSP implementation to simplify comparisons. This means that some of
-the newer functionality from more recent PyCSP implementations (such
-as "retire") does not exist yet. 
+This implementation uses Python coroutines and the asyncio library. 
 
-The main differences are that: 
-* We do not support multithreading at the moment; it's replaced with asyncio whenever possible 
-* Any method or function that might "block" is replaced with 'async def' coroutines
-* Function calls, context managers etc that might block/yield must be modified to equivalent await-statements
-* The Process class is gone and replaced with a normal async def function as we don't need Thread objects. 
+Some of the main advantages compared to older implementations are:
+- support for input _and_ output guards
+- arbitrary number of readers and writers (as well as guarded reads and writes through ALT) can be queued on channel ends
+- there is no need for specific channel types that limit the number of readers and writers
+- the implementation is faster and uses less memory per @process. 
+- It is also easier to read and understand, partly due to reduced complexity. 
 
-This means that the current source code is not directly compatible
-with the thread based PyCSP version.
+Compared to the thread based version: 
+- support for a higher number of concurrent processes
+- less memory overhead per process
+- less context switching overhead
 
-As an example, consider the following old PyCSP code: 
+The major drawbacks are: 
+- incompatible with the thread based version (requires coroutine syntax, see below)
+- there is currently no direct support for using aPyCSP in a multithreaded program. 
+- blocking operations in processes should be replaced with asyncio (or similar) versions. 
+
+For the other implementations of PyCSP, please check: 
+- [https://pycsp.github.io](https://pycsp.github.io) for an overview of the PyCSP repositories. 
+- [https://github.com/PyCSP](https://github.com/PyCSP) for the main PyCSP github organisation. 
+
+
+### Syntax compared with a thread based version
+
+Coroutines in Python use some extensions to the Python syntax, which
+means that the aPyCSP API is slightly different than in a thread based
+version.
+
+As an example, consider the following older thread based PyCSP code: 
 
 ``` Python
     cout('something')
@@ -27,7 +46,7 @@ As an example, consider the following old PyCSP code:
     print("Got result from alt: ", val)
 ```
 
-Using the asyncio version, we need to write: 
+In aPyCSP, many constructs are awaitable coroutines, which require a change to how they are used: 
 
 ``` Python
     await cout('something')
@@ -37,20 +56,14 @@ Using the asyncio version, we need to write:
     print("Got result from alt: ", val)
 ```
 
-Some of the main advantages of this version compared to the multithreaded version are:
-* support for input _and_ output guards
-* arbitrary number of readers, writers and guarded reads and writes (through ALT) can be queued on channel ends
-* there is no need for specific channel types that limit the number of readers and writers
-* the implementation is faster and uses less memory per @process. 
-* It is also easier to read and understand, partly due to reduced complexity. 
+The main differences are that: 
+* Any method or function that might "block" is replaced with 'async def' coroutines
+* Function calls, context managers etc that might block/yield must be modified to equivalent await-statements
+* The Process class is gone and replaced with a normal async def function as we don't need Thread objects. 
 
 
-For the other implementations of PyCSP, please check: 
-- [https://pycsp.github.io](https://pycsp.github.io) for an overview of the PyCSP repositories. 
-- [https://github.com/PyCSP](https://github.com/PyCSP) for the main PyCSP github organisation. 
+### Performance improvement using uvloop (optional)
 
-
-
-
-
-
+The performance of aPyCSP can be improved by using uvloop to replace
+the asyncio scheduler. The examples and benchmarks can be executed
+with uvloop by specifying the -u parameter. 
