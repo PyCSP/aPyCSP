@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import sys
 import time
 from common import handle_common_args, avg
 import apycsp
 from apycsp import process, run_CSP
 
 print("--------------------- Producer/consumer --------------------")
-handle_common_args()
+args = handle_common_args([
+    (("-profile",), dict(help="profile", action="store_const", const=True, default=False)),
+])
 Channel = apycsp.Channel    # in case command line arguments replaced the Channel def
 
 
@@ -30,7 +33,7 @@ async def consumer(cin, n_warm, n_runs, run_no):
     t2 = ts()
     dt = (t2 - t1) * 1_000_000  # in microseconds
     per_rw = dt / n_runs
-    print(f"Run %d DT = {dt:f} us. Time per rw {per_rw:7.3f} us")
+    print(f"Run {run_no} DT = {dt:f} us. Time per rw {per_rw:7.3f} us")
     return per_rw
 
 
@@ -47,11 +50,13 @@ def run_bm():
         # print(rets)
         res.append(rets[-1])
     print("Res with min, avg, max")
-    print(f"| producer-consumer | {min(res):7.3f} | {avg(res):7.3f} |{max(res):7.3f} |")
+    nm_args = " ".join(sys.argv)
+    print(f"| {nm_args} | {min(res):7.3f} | {avg(res):7.3f} |{max(res):7.3f} |")
     return rets
 
 
 if __name__ == "__main__":
     run_bm()
-    import cProfile
-    cProfile.run("run_bm()", sort='tottime')
+    if args.profile:
+        import cProfile
+        cProfile.run("run_bm()", sort='tottime')

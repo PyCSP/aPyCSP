@@ -3,6 +3,7 @@
 import os
 import time
 import psutil
+import sys
 import common
 import apycsp
 from apycsp import process, run_CSP
@@ -57,7 +58,7 @@ def run_n_procs(n):
     trun = t3 - t2
     print("Creating tasks: {:15.3f} us  {:15.3f} ms  {:15.9f} s".format(1_000_000 * tcr,  1000 * tcr,  tcr))
     print("Running  tasks: {:15.3f} us  {:15.3f} ms  {:15.9f} s".format(1_000_000 * trun, 1000 * trun, trun))
-    print("{" + (f'"nprocs" : {n}, "t1" : {t1}, "t2" : {t2}, "t3" : {t3}, "tcr" : {tcr}, "trun" : {trun}, "rss" : {rss}') + "}")
+    print("{" + (f'"args" : {sys.argv[1:]}, "nprocs" : {n}, "t1" : {t1}, "t2" : {t2}, "t3" : {t3}, "tcr" : {tcr}, "trun" : {trun}, "rss" : {rss}') + "}")
 
 
 run_n_procs(N_PROCS)

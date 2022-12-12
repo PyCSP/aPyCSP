@@ -274,41 +274,25 @@ class Channel:
     # queued in them at the same time since both read and write checks the
     # other queue and immediately matches an operation if there is something in
     # the other queue.
-    # TODO: moved the decorated versions of _read and _write to test/common_exp.py for easier
-    # experimenting with alternative implementations.
-    # This is currently the fastest version that uses the least amount of memory, but the context manager version
-    # is almost as lean at an execution time cost closer to the decorator version.
+    @chan_poisoncheck
     async def _read(self):
-        try:
-            if self.poisoned:
-                return    # NBhis should raise a poison exception due to the finally clause.
+        rcmd = _ChanOP('read', None)
+        if len(self.wqueue) == 0 or len(self.rqueue) > 0:
+            # No write to match up with. Wait.
+            return await self._wait_for_op(self.rqueue, rcmd)
+        # Find matching write cmd.
+        wcmd = self.wqueue.popleft()
+        return self._rw_nowait(wcmd, rcmd)[1]
 
-            rcmd = _ChanOP('read', None)
-            if len(self.wqueue) == 0 or len(self.rqueue) > 0:
-                # No write to match up with. Wait.
-                return await self._wait_for_op(self.rqueue, rcmd)
-            # Find matching write cmd.
-            wcmd = self.wqueue.popleft()
-            return self._rw_nowait(wcmd, rcmd)[1]
-        finally:
-            if self.poisoned:
-                raise ChannelPoisonException()
-
+    @chan_poisoncheck
     async def _write(self, obj):
-        try:
-            if self.poisoned:
-                return
-
-            wcmd = _ChanOP('write', obj)
-            if len(self.rqueue) == 0 or len(self.wqueue) > 0:
-                # No read to match up with. Wait.
-                return await self._wait_for_op(self.wqueue, wcmd)
-            # Find matching read cmd.
-            rcmd = self.rqueue.popleft()
-            return self._rw_nowait(wcmd, rcmd)[0]
-        finally:
-            if self.poisoned:
-                raise ChannelPoisonException()
+        wcmd = _ChanOP('write', obj)
+        if len(self.rqueue) == 0 or len(self.wqueue) > 0:
+            # No read to match up with. Wait.
+            return await self._wait_for_op(self.wqueue, wcmd)
+        # Find matching read cmd.
+        rcmd = self.rqueue.popleft()
+        return self._rw_nowait(wcmd, rcmd)[0]
 
     async def poison(self):
         """Poison a channel and wake up all ops in the queues so they can catch the poison."""

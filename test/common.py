@@ -6,17 +6,12 @@
 import argparse
 import sys
 sys.path.append("..")  # Trick to import pycsp without setting PYTHONPATH
-import common_exp      # noqa E402  -- suppress flake8 warning
 
 # Common arguments are added and handled here. The general outline for a program is to
 # use common.handle_common_args() with a list of argument specs to add.
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument("-u", "--uvloop", help='use uvloop', action="store_const", const=True, default=False)
-argparser.add_argument("-rw_deco", help='use decorators for read/write ops on channels', action='store_const', const=True, default=False)
-argparser.add_argument("-rw_ctxt", help='use context manager for read/write ops on channels', action='store_const', const=True, default=False)
-argparser.add_argument("-rw_ctxt2", help='use context manager in the channel for read/write ops on channels', action='store_const', const=True, default=False)
-argparser.add_argument("-rw_ctxt3", help='use context manager (contextlib based) for read/write ops on channels', action='store_const', const=True, default=False)
 
 
 def handle_common_args(argspecs=None):
@@ -37,14 +32,6 @@ def handle_common_args(argspecs=None):
         import uvloop
         # asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
         uvloop.install()
-    if args.rw_deco:
-        common_exp.set_channel_rw_decorator()
-    if args.rw_ctxt:
-        common_exp.set_channel_contextmgr()
-    if args.rw_ctxt2:
-        common_exp.set_channel_contextmgr2()
-    if args.rw_ctxt3:
-        common_exp.set_channel_contextlib_manager()
     return args
 
 

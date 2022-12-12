@@ -5,14 +5,16 @@
 Producer-consumer,  but using multiple channels and sending tentative reads and writes to all of them using alt/select.
 """
 
-
+import sys
 import time
 from common import handle_common_args, avg
 import apycsp
 from apycsp import process, run_CSP, Alternative
 
 print("--------------------- Producer/consumer --------------------")
-handle_common_args()
+args = handle_common_args([
+    (("-profile",), dict(help="profile", action="store_const", const=True, default=False)),
+])
 Channel = apycsp.Channel    # in case command line arguments replaced the Channel def
 
 
@@ -68,8 +70,10 @@ def run_bm(producer=producer, N_CHANNELS=5):
                        consumer(ch_reads, N_WARM, N_RUN, i))
         # print(rets)
         res.append(rets[-1])
-    print("Res with nchans, min, avg, max")
-    print(f"| {producer.__name__}-consumer alt | {N_CHANNELS} | {min(res):7.3f} | {avg(res):7.3f} |{max(res):7.3f} |")
+    if nc == 1:
+        print("Res with nchans, min, avg, max")
+    args = " ".join(sys.argv[1:])
+    print(f"| {producer.__name__}-consumer alt {args} | {N_CHANNELS} | {min(res):7.3f} | {avg(res):7.3f} |{max(res):7.3f} |")
     return rets
 
 
@@ -78,8 +82,9 @@ if __name__ == "__main__":
         run_bm(N_CHANNELS=nc)
     for nc in [1, 2, 4, 6, 8, 10]:
         run_bm(producer=alting_producer, N_CHANNELS=nc)
-    import cProfile
-    cProfile.run("run_bm()", sort='tottime')
-    print("Profile with alting producer")
-    import cProfile
-    cProfile.run("run_bm(producer=alting_producer)", sort='tottime')
+    if args.profile:
+        import cProfile
+        cProfile.run("run_bm()", sort='tottime')
+        print("Profile with alting producer")
+        import cProfile
+        cProfile.run("run_bm(producer=alting_producer)", sort='tottime')
