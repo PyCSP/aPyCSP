@@ -468,6 +468,10 @@ class Alternative:
             g.disable(self)
         self.enabled_guards = []
 
+    # TODO: priSelect always tries the guards in the same order. The first successful will stop the attemt and unroll the other.
+    # If all guards are enabled, the first guard to succeed will unroll the others.
+    # The result is that other types of select could be provided by reordering the guards before trying to enable them.
+
     async def select(self):
         return await self.priSelect()
 
