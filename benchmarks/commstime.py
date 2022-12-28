@@ -14,9 +14,10 @@
 
 import os
 import time
+import asyncio
 from common import handle_common_args
 import apycsp
-from apycsp import process, run_CSP
+from apycsp import process, Parallel
 from apycsp.plugNplay import Delta2, Prefix, Successor
 import sys
 
@@ -45,17 +46,18 @@ async def consumer(cin, run_no):
     return tchan
 
 
-def CommsTimeBM(run_no, Delta2=Delta2):
+async def CommsTimeBM(run_no, Delta2=Delta2):
     # Create channels
     a = Channel("a")
     b = Channel("b")
     c = Channel("c")
     d = Channel("d")
 
-    rets = run_CSP(Prefix(c.read, a.write, prefixItem=0),    # initiator
-                   Delta2(a.read, b.write, d.write),         # forwarding to two
-                   Successor(b.read, c.write),               # feeding back to prefix
-                   consumer(d.read, run_no))                 # timing process
+    rets = await Parallel(
+        Prefix(c.read, a.write, prefixItem=0),    # initiator
+        Delta2(a.read, b.write, d.write),         # forwarding to two
+        Successor(b.read, c.write),               # feeding back to prefix
+        consumer(d.read, run_no))                 # timing process
     return rets[-1]
 
 
@@ -64,7 +66,7 @@ def run_bm(Delta2=apycsp.plugNplay.Delta2):
     N_BM = 10
     tchans = []
     for i in range(N_BM):
-        tchans.append(CommsTimeBM(i, Delta2))
+        tchans.append(asyncio.run(CommsTimeBM(i, Delta2)))
     t_min = 1_000_000 * min(tchans)
     t_avg = 1_000_000 * sum(tchans) / len(tchans)
     t_max = 1_000_000 * max(tchans)

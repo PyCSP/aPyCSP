@@ -5,6 +5,7 @@ import asyncio
 import collections
 import functools
 import sys
+from enum import Enum
 
 
 # ******************** Core code ********************
@@ -41,22 +42,6 @@ def process(func):
     return proc_wrapped
 
 
-def run_CSP(*procs):
-    """Runs the CSP processes in parallel (equivalent to a PAR).
-    Intended to be used by the outer sequential program that starts running a CSP network.
-    """
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(asyncio.gather(*procs))
-
-
-def run_CSP_seq(*procs):
-    """Runs the CSP processes one by one (equivalent to a SEQ).
-    Intended to be used by the outer sequential program that starts running a CSP network.
-    """
-    loop = asyncio.get_event_loop()
-    return [loop.run_until_complete(p) for p in procs]
-
-
 async def Parallel(*procs):
     return await asyncio.gather(*procs)
 
@@ -68,7 +53,7 @@ async def Sequence(*procs):
 def Spawn(proc):
     """For running a process in the background. Actual execution is only
     possible as long as the event loop is running."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return loop.create_task(proc)
 
 
@@ -101,7 +86,7 @@ class Timer(Guard):
         self.alt = None
         self.seconds = seconds
         self.cb = None
-        self.loop = asyncio.get_event_loop()
+        self.loop = asyncio.get_running_loop()
 
     def enable(self, alt):
         self.alt = alt
@@ -205,15 +190,24 @@ class ChannelReadEnd(ChannelEnd, Guard):
         return await self._chan._read()
 
 
+class _ChanOpcode(Enum):
+    READ = 'r'
+    WRITE = 'w'
+
+
+CH_READ = _ChanOpcode.READ
+CH_WRITE = _ChanOpcode.WRITE
+
+
 class _ChanOP:
     """Used to store channel cmd/ops for the op queues."""
     __slots__ = ['cmd', 'obj', 'fut', 'alt', 'wguard']    # reduce some overhead
 
     def __init__(self, cmd, obj, alt=None):
-        self.cmd = cmd
+        self.cmd = cmd    # read or write
         self.obj = obj
         self.fut = None   # Future is used for commands that have to wait
-        self.alt = alt
+        self.alt = alt    # None if normal read, reference to the ALT if tentative/alt
 
     def __repr__(self):
         return f"<_ChanOP: {self.cmd}>"
@@ -223,138 +217,147 @@ class Channel:
     """CSP Channels for aPyCSP. This is a generic channel that can be used with multiple readers
     and writers. The channel ends also supports being used as read guards (read ends) and for
     creating lazy/pending writes that be submitted as write guards in an ALT.
+
+    Note that the following rules apply:
+    1) An operation that is submitted (read or write) is immediately paired with the first corresponding operation in the queue
+    2) If no corresponding operation exists, the operation is added to the end of the queue
+
+    Following from these rules, the queue can only be either empty or have a queue of a single
+    type of operation (read or write).
     """
     def __init__(self, name="", loop=None):
         if loop is None:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
         self.loop = loop
         self.name = name
         self.poisoned = False
-        self.wqueue = collections.deque()
-        self.rqueue = collections.deque()
+        self.queue = collections.deque()
         self.read = ChannelReadEnd(self)
         self.write = ChannelWriteEnd(self)
 
     def __repr__(self):
-        return "<Channel {} wq {} rq {}>".format(self.name, len(self.wqueue), len(self.rqueue))
+        return f"<Channel {self.name} ql {len(self.queue)}"
 
-    def _wait_for_op(self, queue, op):
+    def _wait_for_op(self, op):
         """Used when we need to queue an operation and wait for its completion.
         Returns a future we can wait for that will, upon completion, contain
         the result from the operation.
         """
         fut = self.loop.create_future()
         op.fut = fut
-        queue.append(op)
+        self.queue.append(op)
         return fut
 
     def _rw_nowait(self, wcmd, rcmd):
         """Execute a 'read/write' and wakes up any futures. Returns the
         return value for (write, read).
-         NB: a _read ALT calling _rw_nowait should represent its own
-        command as a normal 'read' instead of an ALT to avoid having
-        an extra schedule() called on it. The same goes for a _write
-        op.
+         NB: a _read ALT calling _rw_nowait should send a non-ALT read
+        instead of an ALT to avoid having an extra schedule() called on it.
+        The same goes for write ops.
         """
         obj = wcmd.obj
         if wcmd.fut:
             wcmd.fut.set_result(0)
         if rcmd.fut:
             rcmd.fut.set_result(obj)
-        if wcmd.cmd == 'ALT':
+        if wcmd.alt is not None:
             # Handle the alt semantics for a sleeping write ALT.
             wcmd.alt.schedule(wcmd.wguard, 0)
-        if rcmd.cmd == 'ALT':
+        if rcmd.alt is not None:
             # Handle the alt semantics for a sleeping read ALT.
             rcmd.alt.schedule(self.read, obj)
         return (0, obj)
 
-    # NB: The way the channels currently work, the write and read queues are
-    # either both empty or one of them is empty. Both cannot have operations
-    # queued in them at the same time since both read and write checks the
-    # other queue and immediately matches an operation if there is something in
-    # the other queue.
+    def _pop_matching(self, op):
+        """Remove and return the first matching operation from the queue, or return None if not possible"""
+        if len(self.queue) > 0 and self.queue[0].cmd == op:
+            return self.queue.popleft()
+        return None
+
+    # NB: See docstring for the channels. The queue is either empty, or it has
+    # a number of queued operations of a single type. There is never both a
+    # read and a write in the same queue.
     @chan_poisoncheck
     async def _read(self):
-        rcmd = _ChanOP('read', None)
-        if len(self.wqueue) == 0 or len(self.rqueue) > 0:
-            # No write to match up with. Wait.
-            return await self._wait_for_op(self.rqueue, rcmd)
-        # Find matching write cmd.
-        wcmd = self.wqueue.popleft()
-        return self._rw_nowait(wcmd, rcmd)[1]
+        rcmd = _ChanOP(CH_READ, None)
+        if (wcmd := self._pop_matching(CH_WRITE)) is not None:
+            # Found a match
+            return self._rw_nowait(wcmd, rcmd)[1]
+
+        # No write to match up with. Wait.
+        return await self._wait_for_op(rcmd)
 
     @chan_poisoncheck
     async def _write(self, obj):
-        wcmd = _ChanOP('write', obj)
-        if len(self.rqueue) == 0 or len(self.wqueue) > 0:
-            # No read to match up with. Wait.
-            return await self._wait_for_op(self.wqueue, wcmd)
-        # Find matching read cmd.
-        rcmd = self.rqueue.popleft()
-        return self._rw_nowait(wcmd, rcmd)[0]
+        wcmd = _ChanOP(CH_WRITE, obj)
+        if (rcmd := self._pop_matching(CH_READ)) is not None:
+            return self._rw_nowait(wcmd, rcmd)[0]
+
+        # No read to match up with. Wait.
+        return await self._wait_for_op(wcmd)
 
     async def poison(self):
         """Poison a channel and wake up all ops in the queues so they can catch the poison."""
         # This doesn't need to be an async method any longer, but we
         # keep it like this to simplify poisoning of remote channels.
-        def poison_queue(queue):
-            while len(queue) > 0:
-                op = queue.popleft()
-                if op.fut:
-                    op.fut.set_result(None)
 
         if self.poisoned:
             return
-        self.poisoned = True
-        poison_queue(self.wqueue)
-        poison_queue(self.rqueue)
 
-    def _remove_alt_from_pqueue(self, queue, alt):
-        """Common method to remove an alt from the read or write queue."""
+        # Cancel any operations in the queue
+        while len(self.queue) > 0:
+            op = self.queue.popleft()
+            if op.fut:
+                op.fut.set_result(None)
+
+        self.poisoned = True
+
+    def _remove_alt_from_queue(self, alt):
+        """Remove an alt from the queue."""
         # TODO: this is inefficient, but should be ok for now.
         # Since a user could, technically, submit more than one operation to the same queue with an alt, it is
-        # necessary to support removing more than one operation on the same alt.
-        # return collections.deque(filter(lambda op: not (op.cmd == 'ALT' and op.alt == alt), queue))
-        return collections.deque(filter(lambda op: op.alt != alt, queue))
+        # necessary to support removing more than one operation on the same alt .
+        self.queue = collections.deque(filter(lambda op: op.alt != alt, self.queue))
 
     # TODO: read and write alts needs poison check, but all guards have to be de-registered properly before
     # throwing an exception.
     def renable(self, alt):
         """enable for the input/read end"""
-        if len(self.wqueue) == 0 or len(self.rqueue) > 0:
-            # Can't match the operation on the other queue, so it must be queued.
-            rcmd = _ChanOP('ALT', None, alt=alt)
-            self.rqueue.append(rcmd)
-            return (False, None)
-        # Found a matching writer. Execute the read and return the read value as well as True for the guard.
-        # Make sure it's treated as a read to avoid having rw_nowait trying to call schedule.
-        rcmd = _ChanOP('read', None)
-        wcmd = self.wqueue.popleft()
-        ret = self._rw_nowait(wcmd, rcmd)[1]
-        return (True, ret)
+        rcmd = _ChanOP(CH_READ, None)
+
+        if (wcmd := self._pop_matching(CH_WRITE)) is not None:
+            # Found a matching writer. Execute the read and return the read value as well as True for the guard.
+            # Make sure it's treated as a read to avoid having rw_nowait trying to call schedule.
+            rcmd.alt = None
+            ret = self._rw_nowait(wcmd, rcmd)[1]
+            return (True, ret)
+
+        # Can't match the operation on the other queue, so it must be queued.
+        rcmd.alt = alt
+        self.queue.append(rcmd)
+        return (False, None)
 
     def rdisable(self, alt):
-        """Removes the ALT from the reader queue."""
-        self.rqueue = self._remove_alt_from_pqueue(self.rqueue, alt)
+        """Removes the ALT from the queue."""
+        self._remove_alt_from_queue(alt)
 
     def wenable(self, alt, pguard):
         """Enable write guard."""
-        if len(self.rqueue) == 0 or len(self.wqueue) > 0:
-            # Can't execute the write directly. Queue the write guard.
-            wcmd = _ChanOP('ALT', pguard.obj, alt=alt)
-            wcmd.wguard = pguard
-            self.wqueue.append(wcmd)
-            return (False, None)
-        # Make sure it's treated as a write without a sleeping future.
-        wcmd = _ChanOP('write', pguard.obj)
-        rcmd = self.rqueue.popleft()
-        ret = self._rw_nowait(wcmd, rcmd)[0]
-        return (True, ret)
+        wcmd = _ChanOP(CH_WRITE, pguard.obj)
+        if (rcmd := self._pop_matching(CH_READ)) is not None:
+            # Make sure it's treated as a write without a sleeping future.
+            ret = self._rw_nowait(wcmd, rcmd)[0]
+            return (True, ret)
+
+        # Can't execute the write directly. Queue the write guard.
+        wcmd.alt = alt
+        wcmd.wguard = pguard
+        self.queue.append(wcmd)
+        return (False, None)
 
     def wdisable(self, alt):
-        """Removes the ALT from the writer queue."""
-        self.wqueue = self._remove_alt_from_pqueue(self.wqueue, alt)
+        """Removes the ALT from the queue."""
+        self._remove_alt_from_queue(alt)
 
     # Support iteration over channel to read from it (async for):
     if sys.version_info >= (3, 7, 0):
@@ -367,6 +370,14 @@ class Channel:
 
     async def __anext__(self):
         return await self._read()
+
+    def verify(self):
+        """Checks the state of the channel using assert."""
+        if self.poisoned:
+            assert len(self.queue) == 0, "Poisoned channels should never have queued messages"
+
+        assert len(self.queue) == 0 or all([x.cmd == self.queue[0].cmd for x in self.queue]), "Queue should be empty, or only contain messages with the same operation/cmd"
+
 
 
 async def poisonChannel(ch):
@@ -397,17 +408,13 @@ class BufferedChannel(Channel):
 
     @chan_poisoncheck
     async def _write(self, obj):
-        wcmd = _ChanOP('write', obj)
-        if len(self.rqueue) == 0 or len(self.wqueue) > 0:
-            # a) Somebody else is already waiting to write, so we're not going to
-            #    change the situation any with this write.
-            # b) Nobody is waiting for our write.
-            # The main difference with normal write: simply append a write op without a future and return to the user.
-            self.wqueue.append(wcmd)
-            return 0
-        # find matching read cmd.
-        rcmd = self.rqueue.popleft()
-        return self._rw_nowait(wcmd, rcmd)[0]
+        wcmd = _ChanOP(CH_WRITE, obj)
+        if (rcmd := self._pop_matching(CH_READ)) is not None:
+            return self._rw_nowait(wcmd, rcmd)[0]
+
+        # The main difference with normal write: simply append a write op without a future and return to the user.
+        self.queue.append(wcmd)
+        return 0
 
 
 # ******************** ALT ********************
@@ -448,7 +455,7 @@ class Alternative:
         self.state = self._ALT_INACTIVE
         self.enabled_guards = []  # List of guards we successfully enabled (and would need to disable on exit).
         self.wait_fut = None      # Wait future when we need to wait for any guard to complete.
-        self.loop = asyncio.get_event_loop()
+        self.loop = asyncio.get_running_loop()
 
     def _enableGuards(self):
         "Enable guards. Selects the first ready guard and stops, otherwise it will enable all guards."

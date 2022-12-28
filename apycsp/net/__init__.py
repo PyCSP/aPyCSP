@@ -35,9 +35,12 @@ sort out the poison semantics and potential overheads etc for this first.
 Channel naming service is very simple at the moment: if we don't have an entry for a given channel name,
 we query all servers for their list of current channels. Then, the channel name is looked up again.
 
-TODO:
-- We should consider a more sophisticated naming service.
-- We should replace the queues with buffered channels.
+NB: From Python 3.7, the recommended way to run asyncio programs is to use
+asyncio.run. That function creates a new loop, runs the provided coroutines and
+then destroys the loop upon exit.
+
+TODO: - Consider a more sophisticated naming service.
+TODO: - Replace the queues with buffered channels?
 """
 
 import asyncio
@@ -82,7 +85,7 @@ async def _stream_reader(reader, handler, wqueue=None):
     """Reads lines from the reader stream, converts from json strings to objects and runs a handler
     for incoming messages.
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     while True:
         data = await reader.readline()
         message = data.decode().strip()
@@ -137,16 +140,16 @@ async def _handle_cmd(cmd, oqueue=None):
         await oqueue.put({'ack' : msgno, 'ret' : res, 'exc' : exc})
         return
 
-    if op == 'ping':
+    elif op == 'ping':
         await oqueue.put({'ack' : msgno, 'ret' : 'ack'})
         return
 
-    if op == 'print':
+    elif op == 'print':
         print("Server asked to print {}".format(cmd['args']))
         await oqueue.put({'ack' : msgno, 'ret' : 'ack'})
         return
 
-    if op == "chanlist":
+    elif op == "chanlist":
         # List of channel names registered in this server
         chlist = list(_chan_registry.keys())
         print("Returning channel list", chlist)
@@ -171,7 +174,7 @@ async def _client_handler(reader, writer):
     # see local notes.
 
 
-def start_server(host_port="8890"):
+async def start_server(host_port="8890"):
     """Start the remote channel/op server"""
     if ":" in host_port:
         host, port = host_port.split(":")
@@ -179,9 +182,7 @@ def start_server(host_port="8890"):
     else:
         host = None
         port = int(host_port)
-    loop = asyncio.get_event_loop()
-    serv = asyncio.start_server(_client_handler, host=host, port=port, loop=loop)
-    loop.create_task(serv)
+    serv = await asyncio.start_server(_client_handler, host=host, port=port)
     print("Running server")
     return serv
 
@@ -213,7 +214,7 @@ class _ClientConn():
         self.wqueue = asyncio.Queue()
         self.rqueue = asyncio.Queue()
         if loop is None:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
         self.loop = loop
 
     async def handler(self, cmd):
@@ -245,35 +246,17 @@ class _ClientConn():
         return res['ret']
 
 
-async def _setup_client(host_port='127.0.0.1:8890', loop=None):
+async def setup_client(host_port='127.0.0.1:8890'):
+    """Connect to a server. Currently only supports one connection"""
     host, port = host_port.split(":")
     port = int(port)
-    reader, writer = await asyncio.open_connection(host, port, loop=loop)
+    reader, writer = await asyncio.open_connection(host, port)
     conn = _ClientConn(reader, writer, host_port, host, port)
     _clconn[host_port] = conn
 
-    loop.create_task(_stream_writer(writer, conn.wqueue))
-    loop.create_task(_stream_reader(reader, conn.handler, conn.wqueue))
-
-
-def setup_client(host_port='127.0.0.1:8890'):
-    """Connect to a server. Currently only supports one connection"""
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(_setup_client(host_port, loop))
-
-
-# NB: send_message_sync doesn't work when called from a coroutine already executed by the event loop.
-# The event loop is not "reentrant", so you can't provide something that has a "synchronous"
-# external interface and use it from an async function using loop.run_until_complete(co)
-# We have a similar problem with initializing the RemoteChan object. The solution for now is to provide
-# both a synchronous and an asynchronous/couroutine version of get_channel_proxy instead of
-# allocating a RemoteChan object directly.
-def send_message_sync(cmd):
-    """Synchronous send/recv of a message for debug purposes.
-    NB: a unique msgno will be inserted into the cmd."""
-    loop = asyncio.get_event_loop()
-    conn = _clconn[list(_clconn.keys())[0]]   # TODO: naughty hack
-    return loop.run_until_complete(conn.send_recv_cmd(cmd))
+    asyncio.create_task(_stream_writer(writer, conn.wqueue))
+    asyncio.create_task(_stream_reader(reader, conn.handler, conn.wqueue))
+    return conn
 
 
 # Inherit from Channel and ChannelEnd to make sure poison propagation works locally as well.
@@ -317,7 +300,7 @@ class _RemoteChan(Channel):
 class _RemoteChanProxy(_RemoteChan):
     def __init__(self, name=None, loop=None, conn=None):
         if loop is None:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
         super().__init__(name, loop, conn)
         self.read  = ChannelReadEnd(self)
         self.write = ChannelWriteEnd(self)
@@ -341,10 +324,3 @@ async def get_channel_proxy(name):
     """Returns a remote channel. Use this from within a coroutine or aPyCSP process."""
     conn = await _find_remote(name)
     return _RemoteChanProxy(name, conn=conn)
-
-
-def get_channel_proxy_s(name):
-    """Synchronous version when we want to create a proxy from outside a coroutine
-    """
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(get_channel_proxy(name))

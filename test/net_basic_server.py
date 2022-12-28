@@ -11,9 +11,6 @@ args = common.handle_common_args([
 ])
 common.handle_common_args()
 
-loop = asyncio.get_event_loop()
-serv = apycsp.net.start_server(args.port)
-
 
 @apycsp.process
 async def writer(ch):
@@ -30,21 +27,21 @@ async def silent_writer(ch):
         await ch.write(42)
 
 
-def serve_test():
+async def serve_test():
     ch1 = apycsp.Channel('net_t1')
     ch2 = apycsp.Channel('net_t2')
     apycsp.net.register_channel(ch1, 'net_t1')
     apycsp.net.register_channel(ch2, 'net_t2')
-    loop.create_task(writer(ch1))
-    loop.create_task(silent_writer(ch2))
+    apycsp.Spawn(writer(ch1))
+    apycsp.Spawn(silent_writer(ch2))
+    serv = await apycsp.net.start_server(args.port)
+    async with serv:
+        await serv.serve_forever()
+    await serv.close()
+    await serv.wait_closed()
 
-
-serve_test()
 
 try:
-    loop.run_forever()
+    asyncio.run(serve_test())
 except KeyboardInterrupt:
     print("Done")
-
-serv.close()
-loop.run_until_complete(serv.wait_closed())

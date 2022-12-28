@@ -5,9 +5,10 @@ Copyright (c) 2018 John Markus Bjørndalen, jmb@cs.uit.no.
 See LICENSE.txt for licensing details (MIT License).
 """
 import time
+import asyncio
 from common import handle_common_args, avg
 import apycsp
-from apycsp import process, run_CSP
+from apycsp import process, Parallel
 
 args = handle_common_args()
 
@@ -35,11 +36,12 @@ async def reader_verb(N, cin):
         print(v, end=" ")
 
 
-def setup_chan():
+async def setup_chan():
     N = 10
     ch = Channel('a')
-    run_CSP(writer(N, ch.write),
-            reader_verb(N, ch.read))
+    await Parallel(
+        writer(N, ch.write),
+        reader_verb(N, ch.read))
     return ch
 
 
@@ -74,23 +76,28 @@ async def get_res(N, c1, c2, dts):
     dts.append(dt_op_us)
 
 
-def run_timing(read_end, write_end):
+async def run_timing(read_end, write_end):
     dts = []
     res1 = Channel()
     res2 = Channel()
     for i in range(100):
         N = 1000
         print(f"  Run {i}:", end="")
-        run_CSP(writer_timed(N, write_end, res1.write),
-                reader_timed(N, read_end, res2.write),
-                get_res(N, res1.read, res2.read, dts))
+        await Parallel(
+            writer_timed(N, write_end, res1.write),
+            reader_timed(N, read_end, res2.write),
+            get_res(N, res1.read, res2.read, dts))
     print(" -- min {:.3f} avg {:.3f} max {:.3f} ".format(min(dts), avg(dts), max(dts)))
 
 
-c = setup_chan()
+async def run_test():
+    c = await setup_chan()
 
-print("timing with channel ends")
-run_timing(c.read, c.write)
+    print("timing with channel ends")
+    await run_timing(c.read, c.write)
 
-print("timing with _read and _write directly")
-run_timing(c._read, c._write)
+    print("timing with _read and _write directly")
+    await run_timing(c._read, c._write)
+
+
+asyncio.run(run_test())

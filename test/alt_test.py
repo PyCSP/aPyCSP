@@ -3,8 +3,9 @@
 # Copyright (c) 2018 John Markus Bjørndalen, jmb@cs.uit.no.
 # See LICENSE.txt for licensing details (MIT License).
 
+import asyncio
 from common import handle_common_args
-from apycsp import process, Alternative, Channel, run_CSP, Skip, Timer, asyncio
+from apycsp import process, Alternative, Channel, Parallel, Skip, Timer
 
 handle_common_args()
 
@@ -50,7 +51,7 @@ async def alt_writer(cout):
         alt = Alternative(g)
         ret = await alt.select()
         print(" -- alt_writer done, got ", ret)
-        print(" ** ch queues : ", cout._chan.rqueue, cout._chan.wqueue)
+        print(" ** ch queue : ", cout._chan.queue)
 
 
 @process
@@ -80,41 +81,49 @@ async def p2(cout):
         await cout("foo %d" % i)
 
 
-def AltTest():
+async def AltTest():
     print("------------- AltTest ----------------")
-    run_CSP(AltTest_p())
+    await Parallel(AltTest_p())
 
 
-def AltTest2():
+async def AltTest2():
     print("------------- AltTest2 ----------------")
     c = Channel('ch2')
-    run_CSP(p1(c.read),
-            p2(c.write))
+    await Parallel(
+        p1(c.read),
+        p2(c.write))
 
 
-def AltTest3():
+async def AltTest3():
     print("------------- AltTest3 ----------------")
     c = Channel('ch3')
-    run_CSP(p1_b(c.read),
-            p2(c.write))
+    await Parallel(
+        p1_b(c.read),
+        p2(c.write))
 
 
-def AltTest4():
+async def AltTest4():
     print("------------- AltTest4 ----------------")
     c = Channel('ch4')
-    run_CSP(alt_writer(c.write),
-            p1(c.read))
+    await Parallel(
+        alt_writer(c.write),
+        p1(c.read))
 
 
-def AltTest5():
+async def AltTest5():
     print("------------- AltTest5 ----------------")
     c = Channel('ch5')
-    run_CSP(alt_timer(c.read),
-            writer(c.write))
+    await Parallel(
+        alt_timer(c.read),
+        writer(c.write))
 
 
-AltTest()
-AltTest2()
-AltTest3()
-AltTest4()
-AltTest5()
+async def run_tests():
+    await AltTest()
+    await AltTest2()
+    await AltTest3()
+    await AltTest4()
+    await AltTest5()
+
+
+asyncio.run(run_tests())

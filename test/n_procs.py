@@ -4,9 +4,10 @@ import os
 import time
 import psutil
 import sys
+import asyncio
 import common
 import apycsp
-from apycsp import process, run_CSP
+from apycsp import process, Parallel
 # NB: the Channel is not imported directly to support switching channel implementation in common_exp
 
 args = common.handle_common_args([
@@ -43,7 +44,7 @@ async def killer(chin, pch, nprocs):
     return rss
 
 
-def run_n_procs(n):
+async def run_n_procs(n):
     print(f"Running with {n} simple_procs")
     ch = Channel()
     pch = Channel()
@@ -51,7 +52,7 @@ def run_n_procs(n):
     tasks = [simple_proc(i, ch.write, pch.read) for i in range(N_PROCS)]
     tasks.append(killer(ch.read, pch, n))
     t2 = time.time()
-    res = run_CSP(*tasks)
+    res = await Parallel(*tasks)
     t3 = time.time()
     rss = res[-1]
     tcr = t2 - t1
@@ -61,4 +62,4 @@ def run_n_procs(n):
     print("{" + (f'"args" : {sys.argv[1:]}, "nprocs" : {n}, "t1" : {t1}, "t2" : {t2}, "t3" : {t3}, "tcr" : {tcr}, "trun" : {trun}, "rss" : {rss}') + "}")
 
 
-run_n_procs(N_PROCS)
+asyncio.run(run_n_procs(N_PROCS))

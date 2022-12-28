@@ -5,18 +5,22 @@ import common
 import apycsp
 import apycsp.net
 from apycsp.plugNplay import Delta2, Prefix, Successor
-from apycsp import run_CSP, process
+from apycsp import Parallel, process
 
 args = common.handle_common_args([
     (("-s", "--serv"), dict(help="specify server as host:port (use multiple times for multiple servers)", action="append", default=[]))
 ])
-if len(args.serv) < 1:
-    apycsp.net.setup_client()
-else:
-    for sp in args.serv:
-        apycsp.net.setup_client(sp)
 
-loop = asyncio.get_event_loop()
+
+async def setup():
+    """Sets up connections and returns a list of connections."""
+    if len(args.serv) < 1:
+        return [await apycsp.net.setup_client()]
+
+    lst = []
+    for sp in args.serv:
+        lst.append(await apycsp.net.setup_client(sp))
+    return lst
 
 
 @process
@@ -40,21 +44,28 @@ async def consumer(cin):
     return tchan
 
 
-def CommsTimeBM():
+async def CommsTimeBM():
     # Get access to remote channels.
     # TODO: we can only run this benchmark once before we need to restart the server side
     # as we will need to re_create the channels between each benchmark run (the first run will poison them).
-    a = apycsp.net.get_channel_proxy_s("a")
-    b = apycsp.net.get_channel_proxy_s("b")
-    c = apycsp.net.get_channel_proxy_s("c")
-    d = apycsp.net.get_channel_proxy_s("d")
+    a = await apycsp.net.get_channel_proxy("a")
+    b = await apycsp.net.get_channel_proxy("b")
+    c = await apycsp.net.get_channel_proxy("c")
+    d = await apycsp.net.get_channel_proxy("d")
 
     print("Running commstime")
-    rets = run_CSP(Prefix(c.read, a.write, prefixItem=0),    # initiator
-                   Delta2(a.read, b.write, d.write),         # forwarding to two
-                   Successor(b.read, c.write),               # feeding back to prefix
-                   consumer(d.read))                         # timing process
+    rets = await Parallel(
+        Prefix(c.read, a.write, prefixItem=0),    # initiator
+        Delta2(a.read, b.write, d.write),         # forwarding to two
+        Successor(b.read, c.write),               # feeding back to prefix
+        consumer(d.read))                         # timing process
     return rets[-1]
 
 
-ct_time = CommsTimeBM()
+async def run_client():
+    await setup()
+    await CommsTimeBM()
+
+
+asyncio.run(run_client())
+print("NB: the channels are poisoned. This requires restarting the server to re-run")

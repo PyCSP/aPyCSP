@@ -8,7 +8,7 @@ import asyncio
 import time
 import common
 import apycsp
-from apycsp import process, Alternative, run_CSP
+from apycsp import process, Alternative, Parallel
 
 N_RUNS    = 10
 N_SELECTS = 10000
@@ -65,7 +65,7 @@ async def stressed_reader(channels, ready, n_writers, writers_per_chan):
         await ch.poison()
 
 
-def run_bm():
+async def run_bm():
     ready = Channel("ready")
     chans = [Channel(f'ch {i}') for i in range(N_CHANNELS)]
     procs = []
@@ -74,7 +74,7 @@ def run_bm():
             writer_id = (cno, c_pid)
             procs.append(stressed_writer(ch.write, ready.write, writer_id))
     procs.append(stressed_reader(chans, ready.read, N_CHANNELS * N_PROCS_PER_CHAN,  N_PROCS_PER_CHAN))
-    run_CSP(*procs)
+    await Parallel(*procs)
 
 
-run_bm()
+asyncio.run(run_bm())

@@ -7,9 +7,10 @@ Producer-consumer,  but using multiple channels and sending tentative reads and 
 
 import sys
 import time
+import asyncio
 from common import handle_common_args, avg
 import apycsp
-from apycsp import process, run_CSP, Alternative
+from apycsp import process, Parallel, Alternative
 
 print("--------------------- Producer/consumer --------------------")
 args = handle_common_args([
@@ -56,7 +57,7 @@ async def consumer(inputs, n_warm, n_runs, run_no):
     return per_rw
 
 
-def run_bm(producer=producer, N_CHANNELS=5):
+async def run_bm(producer=producer, N_CHANNELS=5):
     N_BM = 10
     N_WARM = 100
     N_RUN   = 10_000
@@ -66,8 +67,9 @@ def run_bm(producer=producer, N_CHANNELS=5):
 
     res = []
     for i in range(N_BM):
-        rets = run_CSP(producer(ch_writes, N_WARM, N_RUN),
-                       consumer(ch_reads, N_WARM, N_RUN, i))
+        rets = await Parallel(
+            producer(ch_writes, N_WARM, N_RUN),
+            consumer(ch_reads, N_WARM, N_RUN, i))
         # print(rets)
         res.append(rets[-1])
     if nc == 1:
@@ -79,9 +81,9 @@ def run_bm(producer=producer, N_CHANNELS=5):
 
 if __name__ == "__main__":
     for nc in [1, 2, 4, 6, 8, 10]:
-        run_bm(N_CHANNELS=nc)
+        asyncio.run(run_bm(N_CHANNELS=nc))
     for nc in [1, 2, 4, 6, 8, 10]:
-        run_bm(producer=alting_producer, N_CHANNELS=nc)
+        asyncio.run(run_bm(producer=alting_producer, N_CHANNELS=nc))
     if args.profile:
         import cProfile
         cProfile.run("run_bm()", sort='tottime')

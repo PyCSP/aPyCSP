@@ -3,8 +3,9 @@
 # Copyright (c) 2018 John Markus Bjørndalen, jmb@cs.uit.no.
 # See LICENSE.txt for licensing details (MIT License).
 
+import asyncio
 from common import handle_common_args
-from apycsp import process, Channel, chan_poisoncheck, poisonChannel, run_CSP
+from apycsp import process, Channel, chan_poisoncheck, poisonChannel, Parallel
 from apycsp.plugNplay import Identity
 
 handle_common_args()
@@ -33,16 +34,17 @@ async def PoisonTest(cout):
     await poisonChannel(cout)
 
 
-def test():
+async def test():
     a = Channel("a")
     b = Channel("b")
     c = Channel("c")
     d = BlackHoleChannel("d")
 
-    run_CSP(PoisonTest(a.write),
-            Identity(a.read, b.write),
-            Identity(b.read, c.write),
-            Identity(c.read, d.write))
+    await Parallel(
+        PoisonTest(a.write),
+        Identity(a.read, b.write),
+        Identity(b.read, c.write),
+        Identity(c.read, d.write))
     for ch in [a, b, c, d]:
         print("State of channel", ch.name, "- poisoned is", ch.poisoned)
 
@@ -63,14 +65,15 @@ async def Count(cout):
         i += 1
 
 
-def test2():
+async def test2():
     a = Channel()
-    run_CSP(Count(a.write),
-            Count(a.write),
-            PoisonReader(a.read))
+    await Parallel(
+        Count(a.write),
+        Count(a.write),
+        PoisonReader(a.read))
     print("Processes done")
 
 
 if __name__ == "__main__":
-    test()
-    test2()
+    asyncio.run(test())
+    asyncio.run(test2())

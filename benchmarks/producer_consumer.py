@@ -3,9 +3,10 @@
 
 import sys
 import time
+import asyncio
 from common import handle_common_args, avg
 import apycsp
-from apycsp import process, run_CSP
+from apycsp import process, Parallel
 
 print("--------------------- Producer/consumer --------------------")
 args = handle_common_args([
@@ -37,7 +38,7 @@ async def consumer(cin, n_warm, n_runs, run_no):
     return per_rw
 
 
-def run_bm():
+async def run_bm():
     N_BM = 10
     N_WARM = 100
     N_RUN   = 10_000
@@ -45,8 +46,9 @@ def run_bm():
 
     res = []
     for i in range(N_BM):
-        rets = run_CSP(producer(chan.write, N_WARM, N_RUN),
-                       consumer(chan.read, N_WARM, N_RUN, i))
+        rets = await Parallel(
+            producer(chan.write, N_WARM, N_RUN),
+            consumer(chan.read, N_WARM, N_RUN, i))
         # print(rets)
         res.append(rets[-1])
     print("Res with min, avg, max")
@@ -56,7 +58,7 @@ def run_bm():
 
 
 if __name__ == "__main__":
-    run_bm()
+    asyncio.run(run_bm())
     if args.profile:
         import cProfile
         cProfile.run("run_bm()", sort='tottime')
