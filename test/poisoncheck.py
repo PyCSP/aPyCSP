@@ -28,7 +28,7 @@ if 'BlackHoleChannel' not in vars():
 
 @process
 async def PoisonTest(cout):
-    for i in range(100):
+    for i in range(30):
         print(i)
         await cout(i)
     await poisonChannel(cout)
@@ -39,19 +39,28 @@ async def test():
     b = Channel("b")
     c = Channel("c")
     d = BlackHoleChannel("d")
+    all_chans = [a, b, c, d]
 
     await Parallel(
         PoisonTest(a.write),
         Identity(a.read, b.write),
         Identity(b.read, c.write),
         Identity(c.read, d.write))
+
+    assert all([ch.poisoned for ch in all_chans]), f"All channels should be poisoned {[ch.poisoned for ch in all_chans]}"
+
     for ch in [a, b, c, d]:
         print("State of channel", ch.name, "- poisoned is", ch.poisoned)
+
+    a.verify()
+    b.verify()
+    c.verify()
+    d.verify()
 
 
 @process
 async def PoisonReader(cin):
-    for i in range(100):
+    for i in range(30):
         r = await cin()
         print(i, r)
     await cin.poison()
@@ -71,6 +80,10 @@ async def test2():
         Count(a.write),
         Count(a.write),
         PoisonReader(a.read))
+
+    assert a.poisoned, "Channel a should be poisoned now"
+    a.verify()
+
     print("Processes done")
 
 

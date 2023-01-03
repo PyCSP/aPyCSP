@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Core implementation of the aPyCSP library. See README.md for more information."""
 
-import asyncio
 import collections
 import functools
-import sys
 from enum import Enum
+import asyncio
+import sys
 
 
 # ******************** Core code ********************
@@ -15,7 +15,7 @@ class ChannelPoisonException(Exception):
 
 
 def chan_poisoncheck(func):
-    "Decorator for making sure that poisoned channels raise exceptions."
+    "Decorator for making sure that poisoned channels raise ChannelPoinsonException."
     @functools.wraps(func)
     async def p_wrap(self, *args, **kwargs):
         try:
@@ -63,7 +63,6 @@ def Spawn(proc):
 class Guard:
     """Base Guard class."""
     # Based on JCSPSRC/src/com/quickstone/jcsp/lang/Guard.java
-
     def enable(self, alt):
         return (False, None)
 
@@ -74,27 +73,32 @@ class Guard:
 class Skip(Guard):
     # Based on JCSPSRC/src/com/quickstone/jcsp/lang/Skip.java
     def enable(self, alt):
-        return (True, None)   # Thread.yield() in java version
+        # Thread.yield() in java version
+        return (True, None)
 
     def disable(self, alt):
         return True
 
 
 class Timer(Guard):
+    """Timer that enables a guard after a specified number of seconds.
+    """
     def __init__(self, seconds):
         self.expired = False
         self.alt = None
         self.seconds = seconds
-        self.cb = None
+        self.timer = None
         self.loop = asyncio.get_running_loop()
 
     def enable(self, alt):
+        self.expired = False
         self.alt = alt
-        self.cb = self.loop.call_later(self.seconds, self.expire)
+        self.timer = self.loop.call_later(self.seconds, self.expire)
         return (False, None)
 
     def disable(self, alt):
-        self.cb.cancel()
+        # See loop in asyncio/base_events.py. Cancelled coroutines are never called.
+        self.timer.cancel()
         self.alt = None
 
     def expire(self, ret=None):
@@ -302,7 +306,7 @@ class Channel:
         # keep it like this to simplify poisoning of remote channels.
 
         if self.poisoned:
-            return
+            return  # already poisoned
 
         # Cancel any operations in the queue
         while len(self.queue) > 0:
@@ -324,11 +328,8 @@ class Channel:
     def renable(self, alt):
         """enable for the input/read end"""
         rcmd = _ChanOP(CH_READ, None)
-
         if (wcmd := self._pop_matching(CH_WRITE)) is not None:
-            # Found a matching writer. Execute the read and return the read value as well as True for the guard.
-            # Make sure it's treated as a read to avoid having rw_nowait trying to call schedule.
-            rcmd.alt = None
+            # Found a match
             ret = self._rw_nowait(wcmd, rcmd)[1]
             return (True, ret)
 
