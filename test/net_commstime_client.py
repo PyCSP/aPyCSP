@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
+"""
+See description in net_commstime_server.py.
+This is the client side that runs the actual benchmark.
+"""
+
 import time
 import asyncio
 import common
+import os
 import apycsp
 import apycsp.net
 from apycsp.plugNplay import Delta2, Prefix, Successor
@@ -15,11 +21,11 @@ args = common.handle_common_args([
 async def setup():
     """Sets up connections and returns a list of connections."""
     if len(args.serv) < 1:
-        return [await apycsp.net.setup_client()]
+        return [await apycsp.net.setup_client(can_serve=True)]
 
     lst = []
     for sp in args.serv:
-        lst.append(await apycsp.net.setup_client(sp))
+        lst.append(await apycsp.net.setup_client(sp, can_serve=True))
     return lst
 
 
@@ -29,8 +35,10 @@ async def consumer(cin):
     # N = 5000
     N = 500
     ts = time.time
+    # Make sure everyting is running first
     t1 = ts()
-    await cin()
+    for i in range(10):
+        await cin()
     t1 = ts()
     for _ in range(N):
         await cin()
@@ -44,14 +52,9 @@ async def consumer(cin):
     return tchan
 
 
-async def CommsTimeBM():
+async def CommsTimeBM(prefix, chan_lst):
     # Get access to remote channels.
-    # TODO: we can only run this benchmark once before we need to restart the server side
-    # as we will need to re_create the channels between each benchmark run (the first run will poison them).
-    a = await apycsp.net.get_channel_proxy("a")
-    b = await apycsp.net.get_channel_proxy("b")
-    c = await apycsp.net.get_channel_proxy("c")
-    d = await apycsp.net.get_channel_proxy("d")
+    a, b, c, d = [await apycsp.net.get_channel_proxy(chname) for chname in chan_lst]
 
     print("Running commstime")
     rets = await Parallel(
@@ -62,9 +65,27 @@ async def CommsTimeBM():
     return rets[-1]
 
 
+async def run_commstime(N=5):
+    prefix_short = str(os.getpid())
+    start_ch = await apycsp.net.get_channel_proxy("start")
+    reply_ch = apycsp.net.create_registered_channel(f"{prefix_short}-reply")
+
+    for run_no in range(N):
+        prefix = f"{prefix_short}-{run_no}"
+        print("Preparing run", prefix, start_ch)
+        await start_ch.write(dict(cmd="setup", prefix=prefix, reply_chname=reply_ch.name))
+        ret = await reply_ch.read()
+        # print('got ret', ret)
+
+        await CommsTimeBM(prefix, ret['chan_lst'])
+
+        await start_ch.write(dict(cmd="cleanup", prefix=prefix, reply_chname=reply_ch.name))
+        await reply_ch.read()
+
+
 async def run_client():
     await setup()
-    await CommsTimeBM()
+    await run_commstime()
 
 
 asyncio.run(run_client())

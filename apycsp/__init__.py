@@ -5,7 +5,6 @@ import collections
 import functools
 from enum import Enum
 import asyncio
-import sys
 
 
 # ******************** Core code ********************
@@ -235,7 +234,7 @@ class Channel:
         self.write = ChannelWriteEnd(self)
 
     def __repr__(self):
-        return f"<Channel {self.name} ql {len(self.queue)}"
+        return f"<{self.__class__.__name__} {self.name} ql={len(self.queue)} p={self.poisoned}>"
 
     def _wait_for_op(self, op):
         """Used when we need to queue an operation and wait for its completion.

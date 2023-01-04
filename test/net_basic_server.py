@@ -30,8 +30,8 @@ async def silent_writer(ch):
 async def serve_test():
     ch1 = apycsp.Channel('net_t1')
     ch2 = apycsp.Channel('net_t2')
-    apycsp.net.register_channel(ch1, 'net_t1')
-    apycsp.net.register_channel(ch2, 'net_t2')
+    apycsp.net.register_channel(ch1, ch1.name)
+    apycsp.net.register_channel(ch2, ch2.name)
     apycsp.Spawn(writer(ch1))
     apycsp.Spawn(silent_writer(ch2))
     serv = await apycsp.net.start_server(args.port)

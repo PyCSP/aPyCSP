@@ -26,8 +26,8 @@ async def setup():
 async def ping(conns):
     """Simple ping test to each of the provided connections"""
     for conn in conns:
-        await conn.send_recv_cmd({'op' : 'ping'})
-        await conn.send_recv_cmd({'op' : 'print', 'args' : 'foo\nbar'})
+        await conn.send_recv_cmd('ping')
+        await conn.send_recv_cmd('print', args='foo\nbar')
 
 
 @apycsp.process
@@ -47,7 +47,7 @@ async def measure_rt(conns, print_hdr=True):
         N = 1000
         t1 = time.time()
         for _ in range(N):
-            conn.send_recv_cmd({'op' : 'ping'})
+            await conn.send_recv_cmd('ping')
         t2 = time.time()
         dt_ms = (t2 - t1) * 1000
         us_msg = 1000 * dt_ms / N
