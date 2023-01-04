@@ -356,13 +356,8 @@ class Channel:
         self._remove_alt_from_queue(alt)
 
     # Support iteration over channel to read from it (async for):
-    if sys.version_info >= (3, 7, 0):
-        # Python 3.7 changed the interface for aiter.
-        def __aiter__(self):
-            return self
-    else:
-        async def __aiter__(self):
-            return self
+    def __aiter__(self):
+        return self
 
     async def __anext__(self):
         return await self._read()
@@ -373,7 +368,6 @@ class Channel:
             assert len(self.queue) == 0, "Poisoned channels should never have queued messages"
 
         assert len(self.queue) == 0 or all([x.cmd == self.queue[0].cmd for x in self.queue]), "Queue should be empty, or only contain messages with the same operation/cmd"
-
 
 
 async def poisonChannel(ch):
