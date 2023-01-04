@@ -181,14 +181,9 @@ class ChannelReadEnd(ChannelEnd, Guard):
     def __repr__(self):
         return "<ChannelReadEnd wrapping %s>" % self._chan
 
-    # support async for ch.read:
-    if sys.version_info >= (3, 7, 0):
-        # Python 3.7 changed the interface for aiter.
-        def __aiter__(self):
-            return self
-    else:
-        async def __aiter__(self):
-            return self
+    # Support "async for ch.read"
+    def __aiter__(self):
+        return self
 
     async def __anext__(self):
         return await self._chan._read()
