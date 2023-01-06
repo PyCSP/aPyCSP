@@ -16,6 +16,28 @@ the screen, providing a trace of the events as they are intended
 
 This makes the program longer, but it's useful for debugging and experimenting
 with alternatives.
+
+Interesting observation
+-----------------------
+Watching the trace, you can probably observe something interesting: a
+philosopher may put down the left and then the right forks as the two events
+immediately following each other. Initially, this might look like a
+bug. Shouldn't the left fork report the next state before the philosopher is
+able to drop the right fork?
+
+The behaviour is correct, however. When the philosopher writes on the left
+fork's channel, it does one of two things:
+- waits for the read from the fork (if the fork is late offering to be put down)
+- completes the matching of the philosopher's write with the fork's read,
+  rendezvousing them in time.
+
+When the write completes, they have both participated in the same read-write
+event, and they are both allowed to continue executing.  _When_ each of them is
+allowed to execute is up to the scheduler, however.  This means that, in
+principle, the philosopher might be able to put down the other fork, leave the
+table, sleep some, get back to the table and prepare for grabbing the forks
+again before the left fork is allowed to report on switching states.
+
 """
 
 import random
@@ -23,6 +45,12 @@ import asyncio
 import itertools
 from common import handle_common_args, CSPTaskGroup
 from apycsp import process, Channel, Alternative, Parallel, Sequence
+
+try:
+    from rich import print
+    uses_rich = True
+except ModuleNotFoundError:
+    uses_rich = False
 
 handle_common_args()
 
@@ -43,6 +71,59 @@ async def rwait(min_s, max_s):
     await asyncio.sleep(min_s + (max_s - min_s) * random.random())
 
 
+def reporter(state_info, pid):
+    """Shorthand for writing state + action(s).
+
+    Retuns a function which takes ('state', *actions) as parameters.
+
+    The function returns the result of the action (if one) or a
+    list of results if it is not a single action.
+    If no actions are specified, it will return an empty list.
+    """
+    async def func(state, *actions):
+        # Send intended state
+        await state_info((pid, state))
+        # Now do actions.
+        if len(actions) == 1:
+            return await actions[0]
+        else:
+            return [await a for a in actions]
+    return func
+
+
+def pretty_state(state, was_changed):
+    """Returns the name of the state, with a * attached
+    if the state was changed. Adds an single space if not.
+
+    If rich is installed: add colors."""
+    pstate = state + " "
+    if was_changed:
+        pstate = state + "*"
+    if not uses_rich:
+        return pstate
+
+    scols = {
+        # forks
+        'wg' : 'gray',
+        'wu' : 'yellow',
+        'wd' : 'blue',
+
+        # philosophers
+        'sl' : 'green',
+        'wt' : 'yellow',
+        'gl' : 'cyan',
+        'gr' : 'bright_cyan',
+        'es' : 'purple',
+        'dl' : 'yellow',
+        'dr' : 'bright_yellow',
+        'xx' : 'white',  # done
+    }
+    if was_changed:
+        return f"[red][bold]{pstate}[/bold][/red]"
+    col = scols.get(state, 'white')
+    return f"[{col}]{pstate}[/{col}]"
+
+
 @process(verbose_poison=verbose_poison)
 async def update_state(cin, states):
     """
@@ -52,24 +133,15 @@ async def update_state(cin, states):
     # easily a bad idea as that places restriction on when other processes can start.
     states = states.copy()
 
-    def set_state(state, new_state=" "):
-        if len(state) < 3:
-            state = state.ljust(3)
-        return state[:-1] + new_state
-
     async for n, (pid, state) in a_enumerate(cin):
-        # Make sure all states are clean
-        for k, v in states.items():
-            states[k] = set_state(v)
-
-        # add a star to signify that this was the changed state
-        states[pid] = set_state(state, "*")
+        states[pid] = state
 
         if n % 10 == 0:
+            # Print header
             print("----" * len(states), n)
             print("  ".join([p for p in states.keys()]))
 
-        print(" ".join([s for s in states.values()]))
+        print(" ".join([pretty_state(s, p == pid) for p, s in states.items()]))
 
 
 @process(verbose_poison=verbose_poison)
@@ -79,18 +151,17 @@ async def fork(pid, cin, state_info):
     1) pick up the fork
     2) put down the fork
     """
+    do = reporter(state_info, pid)
+
     while True:
         # wait for fork grab
-        await state_info((pid, 'wg'))
-        phil_hand = await cin()
+        phil_hand = await do('wg', cin())
 
         # wait for philosopher to pick up fork
-        await state_info((pid, 'wu'))
-        await phil_hand()
+        await do('wu', phil_hand())
 
         # wait for philosopher to put down fork
-        await state_info((pid, 'wd'))
-        await phil_hand()
+        await do('wd', phil_hand())
 
 
 @process(verbose_poison=verbose_poison)
@@ -102,45 +173,42 @@ async def philosopher(pid, fm_enter, fm_leave, fork_left, fork_right, state_info
     hright = Channel(f"phil-{pid}-right-hand")
     print(f"Phil {pid} got fl {fork_left._chan.name} fr {fork_right._chan.name}")
 
-    async def up_fork(hand, fork, state):
+    async def up_fork(hand, fork):
         await rwait(*fork_waits)
-        await state_info((pid, state))
         await fork(hand.read)
         await hand.write(pid)
 
-    async def down_fork(hand, fork, state):
+    async def down_fork(hand, fork):
         await rwait(*fork_waits)
-        await state_info((pid, state))
         await hand.write(pid)
 
     seq = range(0, max_eats)
     if max_eats < 0:
         seq = itertools.count()
 
+    do = reporter(state_info, pid)
+
     for n in seq:
-        await state_info((pid, "sl"))
-        await rwait(*sleep_waits)
+        # Sleep
+        await do("sl", rwait(*sleep_waits))
 
         # Wait for admission to table
-        await state_info((pid, "wt"))   # wait for admission
-        await fm_enter(pid)
+        await do("wt", fm_enter(pid))
 
         # Grab forks
-        await up_fork(hleft, fork_left, state="gl")
-        await up_fork(hright, fork_right, state="gr")
+        await do("gl", up_fork(hleft, fork_left))
+        await do("gr", up_fork(hright, fork_right))
 
-        # Eat
-        await state_info((pid, "es"))   # eat spaghetti
-        await rwait(*eat_waits)
+        # Eat spaghetti
+        await do("es", rwait(*eat_waits))
 
         # Drop forks
-        await down_fork(hleft, fork_left, state="gl")
-        await down_fork(hright, fork_right, state="gr")
+        await do("dl", down_fork(hleft, fork_left))
+        await do("dr", down_fork(hright, fork_right))
 
         # Leave table
-        await state_info((pid, "lt"))
-        await fm_leave(pid)
-    await state_info((pid, "xx"))
+        await do("lt", fm_leave(pid))
+    await do("xx")
     print(f"Philosopher {pid} decided to go somewhere else")
 
 
@@ -154,6 +222,7 @@ async def footman(pid, ask_join, ask_leave, state_info):
         if at_table == 4:
             # Table full enough, only accept leaving
             alt = Alternative(ask_leave)
+
         ch, _ = await alt.select()
         if ch == ask_join:
             at_table += 1
@@ -245,5 +314,10 @@ async def start_group_2(N=5, max_eats=3):
             apply_poison(poison_chans)))
 
 
-# asyncio.run(start_group())
+print("Running dining philosophers with a task group")
+print("---------------------------------------------")
+asyncio.run(start_group())
+
+print("Running dining philosophers using Sequence and Parallel")
+print("-------------------------------------------------------")
 asyncio.run(start_group_2())
