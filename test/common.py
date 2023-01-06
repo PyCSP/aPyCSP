@@ -44,6 +44,7 @@ def avg(vals):
 
 class CSPTaskGroup:
     """Inspired by 3.11 TaskGroup.
+    See https://docs.python.org/3/library/asyncio-task.html
 
     The main functionality here is to spawn processes, interact with them and
     make sure all of them have finished before stopping.
@@ -60,8 +61,12 @@ class CSPTaskGroup:
     This is in the test/examples code as I have not thought about the semantics and the idea yet.
     I'm just using it for test-code at the moment.
     """
-    def __init__(self):
+    def __init__(self, name=None, verbose=True):
         self.group = []
+        self.verbose = verbose
+        self.name = name
+        if name is None:
+            self.name = id(self)
 
     def spawn(self, proc):
         handle = Spawn(proc)
@@ -71,8 +76,13 @@ class CSPTaskGroup:
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, type, value, traceback):
-        print("TaskGroup waiting for procs to finish")
+    async def __aexit__(self, et, exc, traceback):
+        if self.verbose:
+            print(f"TaskGroup {self.name} waiting for procs to finish")
+        if exc is not None:
+            print("Caught exception", et, exc, traceback)
+            raise exc
         ret = await asyncio.gather(*self.group)
-        print("TaskGroup done")
+        if self.verbose:
+            print(f"TaskGroup {self.name} done")
         return ret
