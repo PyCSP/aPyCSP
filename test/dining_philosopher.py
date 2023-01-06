@@ -30,6 +30,8 @@ verbose_poison = True    # Whether processes should report when they are killed 
 
 
 async def a_enumerate(seq, start=0):
+    """Iterate over a sequence that requires async for.
+    """
     i = start
     async for val in seq:
         yield i, val
@@ -41,11 +43,6 @@ async def rwait(min_s, max_s):
     await asyncio.sleep(min_s + (max_s - min_s) * random.random())
 
 
-async def report(chan_out, pid, state):
-    """Utility function for making report slightly smaller"""
-    await chan_out(dict(pid=pid, state=state))
-
-
 @process(verbose_poison=verbose_poison)
 async def update_state(cin, states):
     """
@@ -54,22 +51,25 @@ async def update_state(cin, states):
     # An alternative could be to receive the state as a first message, but that is
     # easily a bad idea as that places restriction on when other processes can start.
     states = states.copy()
-    # Make room for last changed flag
-    for k, v in states.items():
-        states[k] = v + " "
 
-    async for n, info in a_enumerate(cin):
-        states[info['pid']] = info['state'] + "*"  # add a star to signify that this was the changed state
+    def set_state(state, new_state=" "):
+        if len(state) < 3:
+            state = state.ljust(3)
+        return state[:-1] + new_state
+
+    async for n, (pid, state) in a_enumerate(cin):
+        # Make sure all states are clean
+        for k, v in states.items():
+            states[k] = set_state(v)
+
+        # add a star to signify that this was the changed state
+        states[pid] = set_state(state, "*")
 
         if n % 10 == 0:
-            print("------------", n)
-            print("  ".join([pid for pid in states.keys()]))
+            print("----" * len(states), n)
+            print("  ".join([p for p in states.keys()]))
 
         print(" ".join([s for s in states.values()]))
-
-        # Clear last changed
-        for k, v in states.items():
-            states[k] = v[:-1] + " "
 
 
 @process(verbose_poison=verbose_poison)
@@ -81,20 +81,21 @@ async def fork(pid, cin, state_info):
     """
     while True:
         # wait for fork grab
-        await report(state_info, pid, 'wg')
+        await state_info((pid, 'wg'))
         phil_hand = await cin()
 
         # wait for philosopher to pick up fork
-        await report(state_info, pid, 'wu')
+        await state_info((pid, 'wu'))
         await phil_hand()
 
         # wait for philosopher to put down fork
-        await report(state_info, pid, 'wd')
+        await state_info((pid, 'wd'))
         await phil_hand()
 
 
 @process(verbose_poison=verbose_poison)
-async def philosopher(pid, fm_enter, fm_leave, fork_left, fork_right, state_info, max_eats=-1):
+async def philosopher(pid, fm_enter, fm_leave, fork_left, fork_right, state_info, max_eats=-1,
+                      fork_waits=[0.1, 0.3], eat_waits=[0.5, 1.5], sleep_waits=[0.5, 1.5]):
     """
     """
     hleft  = Channel(f"phil-{pid}-left-hand")
@@ -102,14 +103,14 @@ async def philosopher(pid, fm_enter, fm_leave, fork_left, fork_right, state_info
     print(f"Phil {pid} got fl {fork_left._chan.name} fr {fork_right._chan.name}")
 
     async def up_fork(hand, fork, state):
-        await rwait(0.3, 1)
-        await report(state_info, pid, state)
+        await rwait(*fork_waits)
+        await state_info((pid, state))
         await fork(hand.read)
         await hand.write(pid)
 
     async def down_fork(hand, fork, state):
-        await rwait(0.3, 1)
-        await report(state_info, pid, state)
+        await rwait(*fork_waits)
+        await state_info((pid, state))
         await hand.write(pid)
 
     seq = range(0, max_eats)
@@ -117,11 +118,11 @@ async def philosopher(pid, fm_enter, fm_leave, fork_left, fork_right, state_info
         seq = itertools.count()
 
     for n in seq:
-        await report(state_info, pid, "sl")
-        await rwait(2, 5)
+        await state_info((pid, "sl"))
+        await rwait(*sleep_waits)
 
         # Wait for admission to table
-        await report(state_info, pid, "wt")   # wait for admission
+        await state_info((pid, "wt"))   # wait for admission
         await fm_enter(pid)
 
         # Grab forks
@@ -129,17 +130,17 @@ async def philosopher(pid, fm_enter, fm_leave, fork_left, fork_right, state_info
         await up_fork(hright, fork_right, state="gr")
 
         # Eat
-        await report(state_info, pid, "es")   # eat spaghetti
-        await rwait(2, 5)
+        await state_info((pid, "es"))   # eat spaghetti
+        await rwait(*eat_waits)
 
         # Drop forks
         await down_fork(hleft, fork_left, state="gl")
         await down_fork(hright, fork_right, state="gr")
 
         # Leave table
-        await report(state_info, pid, "lt")
+        await state_info((pid, "lt"))
         await fm_leave(pid)
-    await report(state_info, pid, "xx")
+    await state_info((pid, "xx"))
     print(f"Philosopher {pid} decided to go somewhere else")
 
 
@@ -147,7 +148,7 @@ async def philosopher(pid, fm_enter, fm_leave, fork_left, fork_right, state_info
 async def footman(pid, ask_join, ask_leave, state_info):
     at_table = 0    # Number of philosophers at the table
     while True:
-        await report(state_info, pid, f"a{at_table}")
+        await state_info((pid, f"a{at_table}"))
 
         alt = Alternative(ask_join, ask_leave)
         if at_table == 4:
