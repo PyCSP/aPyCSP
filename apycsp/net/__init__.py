@@ -134,16 +134,16 @@ class _RemoteChan(Channel):
 
     async def _write(self, msg):
         # TODO: check for poison
-        return await self.conn.send_recv_cmd('write', name=self.name, msg=msg)
+        return await self.conn.send_recv_cmd(Connection.OP_WRITE, name=self.name, msg=msg)
 
     async def _read(self):
         # TODO: check for poison
-        return await self.conn.send_recv_cmd('read', name=self.name)
+        return await self.conn.send_recv_cmd(Connection.OP_READ, name=self.name)
 
     async def poison(self):
         # Make sure we poison both the local proxy and the remote channel
         await super().poison()
-        return await self.conn.send_recv_cmd('poison', name=self.name)
+        return await self.conn.send_recv_cmd(Connection.OP_POISON, name=self.name)
 
 
 class _RemoteChanProxy(_RemoteChan):
@@ -164,6 +164,16 @@ class Connection():
     _opqueue = {}   # Ops waiting for return values.
     _msgno = 0
 
+    OP_WRITE = 'write'
+    OP_READ = 'read'
+    OP_POISON = 'poison'
+    OP_PING = 'ping'
+    OP_PRINT = 'print'
+    OP_CHANLIST = 'chanlist'
+    OP_REGSERV = 'regserv'
+
+    MSG_KILL = 'kill'   # inserted into a msg queue to kill the stream_writer
+
     def __init__(self, reader, writer, host_port, host, port, loop=None, will_serve=False):
         self.reader = reader
         self.writer = writer
@@ -176,6 +186,7 @@ class Connection():
             loop = asyncio.get_running_loop()
         self.loop = loop
         self.will_serve = will_serve
+        self.alive = True
 
     def _get_msgno(self):
         """Returns a unique message number, for pairing messages with acks"""
@@ -186,6 +197,7 @@ class Connection():
         self._clconn[self.host_port] = self
 
     def remove_client(self):
+        self.alive = False
         print("Removing connection and proxies associated with the connection", self)
         if self.host_port in self._clconn:
             print(" - deleting from _clconn")
@@ -207,16 +219,17 @@ class Connection():
         """Drains a queue for a given connection and writes the json strings to the 'writer' stream"""
         while True:
             msg = await self.wqueue.get()
-            if msg == 'kill':
-                print("Got kill token in _stream_writer. Exiting")
+            if msg == self.MSG_KILL:
+                print("Got kill token in _stream_writer. Exiting.")
                 break
             msg_s = json.dumps(msg) + "\n"
             if self.writer.transport.is_closing():
-                print("Lost connection on writer before we could send message")
+                print("Lost connection on writer before we could send message.")
                 break
             self.writer.write(msg_s.encode())
             await self.writer.drain()
         self.writer.close()
+        self.alive = False
         print("_stream_writer done")
 
     async def _stream_reader(self):
@@ -227,12 +240,13 @@ class Connection():
             data = await self.reader.readline()
             message = data.decode().strip()
             if message is None or message == '':
-                print("Probably lost connection")
+                print(f"Probably lost connection - {self.reader.at_eof()=}")
                 break
             self.loop.create_task(self._msg_handler(json.loads(message)))
-        print("_stream_reader done")
+        print(f"_stream_reader done {self.reader.at_eof()=}")
         if self.wqueue:
-            await self.wqueue.put("kill")    # put token on output queue to wake up and kill writer
+            await self.wqueue.put(self.MSG_KILL)    # put token on output queue to wake up and kill writer
+        self.alive = False
 
     async def run_stream_handlers(self):
         """Typicaly used by server connection handler. Waits for the stream reader and writer to complete"""
@@ -255,7 +269,7 @@ class Connection():
         def reply(ack, ret='ack', **kwargs):
             return self.wqueue.put(dict(ack=ack, ret=ret, **kwargs))
 
-        if op in ['read', 'write', 'poison']:
+        if op in [self.OP_READ, self.OP_WRITE, self.OP_POISON]:
             name = cmd.get('name', None)
             chan = _chan_registry.get(name, None)
             exc = None
@@ -274,16 +288,16 @@ class Connection():
             await reply(msgno, res, exc=exc)
             return
 
-        elif op == 'ping':
+        elif op == self.OP_PING:
             await reply(msgno)
             return
 
-        elif op == 'print':
+        elif op == self.OP_PRINT:
             print("Server was asked to print {}".format(cmd['args']))
             await reply(msgno)
             return
 
-        elif op == "chanlist":
+        elif op == self.OP_CHANLIST:
             # List of channel names registered in this server
             chlist = list(_chan_registry.keys())
             # print("Returning channel list", chlist)
@@ -292,7 +306,7 @@ class Connection():
             await reply(msgno, ret=chlist)
             return
 
-        elif op == "regserv":
+        elif op == self.OP_REGSERV:
             # print("Client connection tries to register as server", self.host_port, cmd)
             self.set_client()
             await reply(msgno)
@@ -349,11 +363,11 @@ class Connection():
         willing to look up and serve registered channels."""
         print("Setting up client as willing to serve")
         self.will_serve = True
-        ret = await self.send_recv_cmd("regserv")
+        ret = await self.send_recv_cmd(self.OP_REGSERV)
         return ret
 
     def __repr__(self):
-        return f"<Connection with {self.host_port}>"
+        return f"<Connection with {self.host_port} alive={self.alive}>"
 
 
 # ############################################################
@@ -410,7 +424,7 @@ async def _find_remote(name):    # noqa E302
     if name in _rchan_reg:
         return _rchan_reg[name]
     for clname, conn in Connection._clconn.items():
-        ret = await conn.send_recv_cmd('chanlist')
+        ret = await conn.send_recv_cmd(Connection.OP_CHANLIST)
         print("Registering", ret, "as owned by", clname)
         for rname in ret:
             _rchan_reg[rname] = conn
