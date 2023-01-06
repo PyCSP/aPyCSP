@@ -5,6 +5,7 @@ import collections
 import functools
 from enum import Enum
 import asyncio
+import types
 
 
 # ******************** Core code ********************
@@ -28,17 +29,38 @@ def chan_poisoncheck(func):
     return p_wrap
 
 
-def process(func):
-    """Annotates a coroutine as a process and takes care of poison propagation."""
-    @functools.wraps(func)
-    async def proc_wrapped(*args, **kwargs):
-        try:
-            return await func(*args, **kwargs)
-        except ChannelPoisonException:
-            # Propagate poison to any channels and channel ends passed as parameters to the process.
-            for ch in [x for x in args if isinstance(x, (ChannelEnd, Channel))]:
-                await ch.poison()
-    return proc_wrapped
+def process(verbose_poison=False):
+    """Annotates a coroutine as a process and takes care of poison propagation.
+
+    If the optional 'verbose_poison' parameter is true, the decorator will print
+    a message when it captures the ChannelPoisonException after the process
+    was poisoned.
+    """
+    def inner_dec(func):
+        @functools.wraps(func)
+        async def proc_wrapped(*args, **kwargs):
+            try:
+                return await func(*args, **kwargs)
+            except ChannelPoisonException:
+                if verbose_poison:
+                    print(f"Process poisoned: {proc_wrapped}({args=}, {kwargs=})")
+                # Propagate poison to any channels and channel ends passed as parameters to the process.
+                for ch in [x for x in args if isinstance(x, (ChannelEnd, Channel))]:
+                    await ch.poison()
+        return proc_wrapped
+
+    # Decorators with optional arguments are a bit tricky in Python.
+    # 1) If the user did not specify an argument, the first argument will be the function to decorate.
+    # 2) If the user specified an argument, the arguments are to the decorator.
+    # In the first case, retturn a decorated function.
+    # In the second case, return a decorator function that returns a decorated function.
+    if isinstance(verbose_poison, (types.FunctionType, types.MethodType)):
+        # Normal case, need to re-map verbose_poison to the default instead of a function,
+        # or it will evaluate to True
+        func = verbose_poison
+        verbose_poison = False
+        return inner_dec(func)
+    return inner_dec
 
 
 async def Parallel(*procs):
@@ -247,8 +269,8 @@ class Channel:
         return fut
 
     def _rw_nowait(self, wcmd, rcmd):
-        """Execute a 'read/write' and wakes up any futures. Returns the
-        return value for (write, read).
+        """Execute a 'read/write' and wakes up any futures.
+        Returns thereturn value for (write, read).
          NB: a _read ALT calling _rw_nowait should send a non-ALT read
         instead of an ALT to avoid having an extra schedule() called on it.
         The same goes for write ops.
@@ -307,6 +329,8 @@ class Channel:
             op = self.queue.popleft()
             if op.fut:
                 op.fut.set_result(None)
+            if op.alt:
+                op.alt._poison(self)
 
         self.poisoned = True
 
@@ -317,10 +341,11 @@ class Channel:
         # necessary to support removing more than one operation on the same alt .
         self.queue = collections.deque(filter(lambda op: op.alt != alt, self.queue))
 
-    # TODO: read and write alts needs poison check, but all guards have to be de-registered properly before
-    # throwing an exception.
     def renable(self, alt):
         """enable for the input/read end"""
+        if self.poisoned:
+            raise ChannelPoisonException(f"wenable on channel {self} {alt=}")
+
         rcmd = _ChanOP(CH_READ, None)
         if (wcmd := self._pop_matching(CH_WRITE)) is not None:
             # Found a match
@@ -338,6 +363,9 @@ class Channel:
 
     def wenable(self, alt, pguard):
         """Enable write guard."""
+        if self.poisoned:
+            raise ChannelPoisonException(f"wenable on channel {self} {alt=} {pguard=}")
+
         wcmd = _ChanOP(CH_WRITE, pguard.obj)
         if (rcmd := self._pop_matching(CH_READ)) is not None:
             # Make sure it's treated as a write without a sleeping future.
@@ -417,8 +445,8 @@ class Alternative:
        switch to ready will immediately jump into the ALT and execute the necessary bits
        to resolve and execute operations (like read in a channel).
        This is possible as there is no lock and we're running single-threaded code.
-       This means that searching for guards in disableGuards is no longer necessary.
-    3. disableGuards is simply cleanup code removing the ALT from the guards.
+       This means that searching for guards in disable_guards is no longer necessary.
+    3. disable_guards is simply cleanup code removing the ALT from the guards.
     This requires that all guard code is synchronous / atomic.
 
     NB:
@@ -446,20 +474,30 @@ class Alternative:
         self.wait_fut = None      # Wait future when we need to wait for any guard to complete.
         self.loop = asyncio.get_running_loop()
 
-    def _enableGuards(self):
+    def _enable_guards(self):
         "Enable guards. Selects the first ready guard and stops, otherwise it will enable all guards."
         self.enabled_guards = []   # TODO: check and raise an error if the list was not already empty
-        for g in self.guards:
-            self.enabled_guards.append(g)
-            enabled, ret = g.enable(self)
-            if enabled:
-                # Current guard is ready, so use this immediately (works for priSelect).
-                self.state = self._ALT_READY
-                return (g, ret)
-        return (None, None)
+        try:
+            for g in self.guards:
+                self.enabled_guards.append(g)
+                enabled, ret = g.enable(self)
+                if enabled:
+                    # Current guard is ready, so use this immediately (works for priSelect).
+                    self.state = self._ALT_READY
+                    return (g, ret)
+            return (None, None)
+        except ChannelPoisonException as e:
+            # Disable any enabled guards.
+            self._disable_guards()
+            self.state = self._ALT_INACTIVE
+            # Re-throwing the exception to reach the caller of alt.select.
+            raise e
 
-    def _disableGuards(self):
-        "Disables guards that we successfully entered in enableGuards."
+    # This should not need to check for poison as any already enabled guards should have blabbered
+    # about the poison directly through alt._poison().
+    # Also, _disable_guards() is called when _enable_guards() detects poison.
+    def _disable_guards(self):
+        "Disables guards that we successfully entered in enable_guards."
         for g in self.enabled_guards:
             g.disable(self)
         self.enabled_guards = []
@@ -474,10 +512,10 @@ class Alternative:
     async def priSelect(self):
         # First, enable guards.
         self.state = self._ALT_ENABLING
-        g, ret = self._enableGuards()
+        g, ret = self._enable_guards()
         if g:
-            # We found a guard in enableGuards.
-            self._disableGuards()
+            # We found a guard in enable_guards.
+            self._disable_guards()
             self.state = self._ALT_INACTIVE
             return (g, ret)
 
@@ -488,6 +526,7 @@ class Alternative:
         g, ret = await self.wait_fut
         # By this time, everything should be resolved and we have a selected guard
         # and a return value (possibly None). We have also disabled the guards.
+        # Poion that propagated while sleeping will be handled by _poison using set_exception().
         self.state = self._ALT_INACTIVE
         return (g, ret)
 
@@ -509,7 +548,17 @@ class Alternative:
             raise Exception(msg)
         # NB: It should be safe to set_result as long as we don't yield in it.
         self.wait_fut.set_result((guard, ret))
-        self._disableGuards()
+        self._disable_guards()
+
+    def _poison(self, guard):
+        """Used to poison an alt that has enabled guards"""
+        msg = f"ALT {self} was poisoned by guard {guard}"
+        # print(msg)
+        # Running disable_guards is safe as long as none of the guards try to set the wait_fut
+        self._disable_guards()
+        if self.wait_fut.done():
+            print("WARNING: alt.wait_fut was already done in alt._poison. This will cause an exception.")
+        self.wait_fut.set_exception(ChannelPoisonException(msg))
 
     # Support for asynchronous context managers. Instead of the following:
     #    (g, ret) = ALT.select():

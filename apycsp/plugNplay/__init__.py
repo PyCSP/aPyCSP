@@ -65,5 +65,5 @@ async def SkipProcess():
 async def Mux2(cin1, cin2, cout):
     alt = Alternative(cin1, cin2)
     while True:
-        _, val = await alt.priSelect()
+        _, val = await alt.pri_select()
         await cout(val)
