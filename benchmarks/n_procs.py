@@ -5,12 +5,12 @@ import time
 import psutil
 import sys
 import asyncio
-import common
 import apycsp
 from apycsp import process, Parallel
+from apycsp.utils import handle_common_args
 # NB: the Channel is not imported directly to support switching channel implementation in common_exp
 
-args = common.handle_common_args([
+args = handle_common_args([
     (["np"], dict(type=int, help='number of procs', default=10, nargs="?")),
 ])
 

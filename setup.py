@@ -7,12 +7,12 @@ from distutils.core import setup
 
 
 setup(name='apycsp',
-      version='0.1.1',
+      version='0.2.0',
       description='aPyCSP - Python CSP Library using asyncio',
       author='John Markus Bjørndalen',
       author_email='jmb@cs.uit.no',
-      url='http://www.cs.uit.no/~johnm/code/PyCSP/',
+      url='https://github.com/PyCSP/aPyCSP',
       license='MIT',
-      packages=['apycsp', 'apycsp.plugNplay'],
+      packages=['apycsp', 'apycsp.plugNplay', 'apycsp.net'],
       platforms=['any'],
       )

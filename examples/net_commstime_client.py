@@ -6,14 +6,14 @@ This is the client side that runs the actual benchmark.
 
 import time
 import asyncio
-import common
 import os
 import apycsp
 import apycsp.net
 from apycsp.plugNplay import Delta2, Prefix, Successor
 from apycsp import Parallel, process
+from apycsp.utils import handle_common_args
 
-args = common.handle_common_args([
+args = handle_common_args([
     (("-s", "--serv"), dict(help="specify server as host:port (use multiple times for multiple servers)", action="append", default=[]))
 ])
 
@@ -89,4 +89,3 @@ async def run_client():
 
 
 asyncio.run(run_client())
-print("NB: the channels are poisoned. This requires restarting the server to re-run")

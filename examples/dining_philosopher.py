@@ -43,8 +43,8 @@ again before the left fork is allowed to report on switching states.
 import random
 import asyncio
 import itertools
-from common import handle_common_args, CSPTaskGroup
 from apycsp import process, Channel, Alternative, Parallel, Sequence
+from apycsp.utils import handle_common_args, CSPTaskGroup
 
 try:
     from rich import print

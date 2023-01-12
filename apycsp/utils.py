@@ -5,7 +5,7 @@
 
 import argparse
 import asyncio
-from apycsp import Spawn
+from apycsp import Spawn, ChannelPoisonException
 
 # Common arguments are added and handled here. The general outline for a program is to
 # use common.handle_common_args() with a list of argument specs to add.
@@ -18,6 +18,8 @@ def handle_common_args(argspecs=None):
     """argspecs is a list of arguments for argparser.add_argument, with
     each item a tuple of (*args, **kwargs).
     Returns the parsed args.
+
+    NB: Using argparser with pytest does not work particularly well.
     """
     if argspecs is None:
         argspecs = []
@@ -59,12 +61,14 @@ class CSPTaskGroup:
     This is in the test/examples code as I have not thought about the semantics and the idea yet.
     I'm just using it for test-code at the moment.
     """
-    def __init__(self, name=None, verbose=True):
+    def __init__(self, name=None, verbose=True, poison_shield=False):
         self.group = []
         self.verbose = verbose
         self.name = name
         if name is None:
             self.name = id(self)
+        self.poisoned = False
+        self.poison_shield = poison_shield
 
     def spawn(self, proc):
         handle = Spawn(proc)
@@ -79,8 +83,22 @@ class CSPTaskGroup:
             print(f"TaskGroup {self.name} waiting for procs to finish")
         if exc is not None:
             print("Caught exception", et, exc, traceback)
+            if isinstance(exc, ChannelPoisonException) and self.poison_shield:
+                self.poisoned = True
+                return
             raise exc
-        ret = await asyncio.gather(*self.group)
+        try:
+            ret = await asyncio.gather(*self.group)
+        except ChannelPoisonException as cp:
+            if self.verbose:
+                print("Caught exception while waiting for asyncio.gather", cp)
+            self.poisoned = True
+            if self.poison_shield:
+                return
+            raise cp
         if self.verbose:
             print(f"TaskGroup {self.name} done")
         return ret
+
+    def __repr__(self):
+        return f"<CSPTaskGroup, gsize={len(self.group)}>"

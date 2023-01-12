@@ -258,15 +258,18 @@ class Channel:
     def __repr__(self):
         return f"<{self.__class__.__name__} {self.name} ql={len(self.queue)} p={self.poisoned}>"
 
+    def queue_len(self):
+        """Mainly for verification. Number of queued operations."""
+        return len(self.queue)
+
     def _wait_for_op(self, op):
         """Used when we need to queue an operation and wait for its completion.
         Returns a future we can wait for that will, upon completion, contain
         the result from the operation.
         """
-        fut = self.loop.create_future()
-        op.fut = fut
+        op.fut = self.loop.create_future()
         self.queue.append(op)
-        return fut
+        return op.fut
 
     def _rw_nowait(self, wcmd, rcmd):
         """Execute a 'read/write' and wakes up any futures.
@@ -395,6 +398,7 @@ class Channel:
             assert len(self.queue) == 0, "Poisoned channels should never have queued messages"
 
         assert len(self.queue) == 0 or all([x.cmd == self.queue[0].cmd for x in self.queue]), "Queue should be empty, or only contain messages with the same operation/cmd"
+        return True
 
 
 async def poisonChannel(ch):

@@ -2,12 +2,12 @@
 
 
 import time
-import common
+import asyncio
 import apycsp
 import apycsp.net
-import asyncio
+from apycsp.utils import handle_common_args
 
-args = common.handle_common_args([
+args = handle_common_args([
     (("-s", "--serv"), dict(help="specify server as host:port (use multiple times for multiple servers)", action="append", default=[]))
 ])
 

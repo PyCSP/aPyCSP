@@ -20,12 +20,12 @@ This example also shows how both the client and the sever chan host channels.
 See the discussion in apycsp.net for deeper issues with network channels.
 """
 import asyncio
-import common
 import apycsp
 import apycsp.net
 from apycsp import process
+from apycsp.utils import handle_common_args
 
-args = common.handle_common_args([
+args = handle_common_args([
     (("-p", "--port"), dict(help="specify port number (alternatively host:port) to bind server to", action="store", default="8890"))
 ])
 

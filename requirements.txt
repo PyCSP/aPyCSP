@@ -1,0 +1,4 @@
+# https://pip.pypa.io/en/latest/reference/requirements-file-format/
+
+# Add local directory as editable project (symlinks instead of copying)
+-e .

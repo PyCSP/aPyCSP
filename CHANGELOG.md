@@ -10,5 +10,16 @@
   - aPyCSP channels were changed to use a single queue in the 
     implementation. This simplifies some of the implementation and 
     verification of correctness. 
+* 2023-01-11
+  - Reorganised the repository a bit, separating test code from 
+    examples and experimental code.
+  - moved common.py from other subdirectories to apycsp/utils.py
+    It should be safer to use virtualenvs to run the code from
+    the separate directories rather than using sys.path hack during 
+    development. That also fixes some dev environment issues 
+    (ex: not finding imports).
 
+
+
+    
     
