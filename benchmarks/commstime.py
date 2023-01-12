@@ -15,10 +15,10 @@
 import os
 import time
 import asyncio
-from common import handle_common_args
 import apycsp
 from apycsp import process, Parallel
 from apycsp.plugNplay import Delta2, Prefix, Successor
+from apycsp.utils import handle_common_args
 import sys
 
 print("--------------------- Commstime --------------------")

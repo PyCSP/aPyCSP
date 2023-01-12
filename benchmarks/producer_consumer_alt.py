@@ -8,9 +8,9 @@ Producer-consumer,  but using multiple channels and sending tentative reads and 
 import sys
 import time
 import asyncio
-from common import handle_common_args, avg
 import apycsp
 from apycsp import process, Parallel, Alternative
+from apycsp.utils import handle_common_args, avg
 
 print("--------------------- Producer/consumer --------------------")
 args = handle_common_args([

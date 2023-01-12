@@ -4,9 +4,9 @@
 import sys
 import time
 import asyncio
-from common import handle_common_args, avg
 import apycsp
 from apycsp import process, Parallel
+from apycsp.utils import handle_common_args, avg
 
 print("--------------------- Producer/consumer --------------------")
 args = handle_common_args([

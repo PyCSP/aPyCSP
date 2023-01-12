@@ -6,9 +6,9 @@
 
 import asyncio
 import time
-import common
 import apycsp
 from apycsp import process, Alternative, Parallel
+from apycsp.utils import handle_common_args
 
 N_RUNS    = 10
 N_SELECTS = 10000
@@ -16,7 +16,7 @@ N_CHANNELS = 10
 N_PROCS_PER_CHAN = 1000
 
 print("--------------------- Stressed Alt --------------------")
-common.handle_common_args()
+handle_common_args()
 Channel = apycsp.Channel    # in case command line arguments replaced the Channel def
 
 
