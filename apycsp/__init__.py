@@ -11,7 +11,7 @@ import types
 # ******************** Core code ********************
 
 class ChannelPoisonException(Exception):
-    pass
+    """Used to interrupt processes accessing poisoned channels."""
 
 
 def chan_poisoncheck(func):
@@ -19,10 +19,12 @@ def chan_poisoncheck(func):
     @functools.wraps(func)
     async def p_wrap(self, *args, **kwargs):
         try:
-            if not self.poisoned:
-                # NB: The await here is necessary to be able to check for channel poison both before
-                # and after completing the execution of the function.
-                return await func(self, *args, **kwargs)
+            if self.poisoned:
+                return None   # Channel poisoned will be raised in finally
+
+            # NB: The await here is necessary to be able to check for channel poison both before
+            # and after completing the execution of the function.
+            return await func(self, *args, **kwargs)
         finally:
             if self.poisoned:
                 raise ChannelPoisonException()
@@ -63,15 +65,25 @@ def process(verbose_poison=False):
     return inner_dec
 
 
-async def Parallel(*procs):
+async def Parallel(*procs):   # pylint: disable=C0103
+    """Used to run a set of processes concurrently.
+    Waits for the processes to complete, and returns a list of return values from each process.
+    """
+    # TODO: asyncio.gather specifies that the results will be in the order of the provided coroutines.
+    # Should this be the external expectation as well?
+    # https://docs.python.org/3/library/asyncio-task.html
     return await asyncio.gather(*procs)
 
 
-async def Sequence(*procs):
+async def Sequence(*procs):   # pylint: disable=C0103
+    """Runs and waits for each process or coroutine in sequence.
+    The return values from each process are returned in the same order as the processes
+    were specified.
+    """
     return [await p for p in procs]
 
 
-def Spawn(proc):
+def Spawn(proc):   # pylint: disable=C0103
     """For running a process in the background. Actual execution is only
     possible as long as the event loop is running."""
     loop = asyncio.get_running_loop()
@@ -84,15 +96,17 @@ def Spawn(proc):
 class Guard:
     """Base Guard class."""
     # Based on JCSPSRC/src/com/quickstone/jcsp/lang/Guard.java
-    def enable(self, alt):
+    def enable(self, alt):    # pylint: disable=W0613
+        """Enable guard. Returns (True, return value) if a guards ready when enabled."""
         return (False, None)
 
-    def disable(self, alt):
+    def disable(self, alt):    # pylint: disable=W0613
+        """Disable guard."""
         return False
 
 
 class Skip(Guard):
-    # Based on JCSPSRC/src/com/quickstone/jcsp/lang/Skip.java
+    """Based on JCSPSRC/src/com/quickstone/jcsp/lang/Skip.java"""
     def enable(self, alt):
         # Thread.yield() in java version
         return (True, None)
@@ -114,7 +128,7 @@ class Timer(Guard):
     def enable(self, alt):
         self.expired = False
         self.alt = alt
-        self.timer = self.loop.call_later(self.seconds, self.expire)
+        self.timer = self.loop.call_later(self.seconds, self._expire)
         return (False, None)
 
     def disable(self, alt):
@@ -122,9 +136,12 @@ class Timer(Guard):
         self.timer.cancel()
         self.alt = None
 
-    def expire(self, ret=None):
+    def _expire(self, ret=None):
         self.expired = True
         self.alt.schedule(self, ret)
+
+    def __repr__(self):
+        return f"<Timer ({self.seconds} S), exp: {self.expired}, mut: {self._mutation}>"
 
 
 # ******************** Channels ********************
@@ -141,6 +158,7 @@ class ChannelEnd:
         return self._chan
 
     async def poison(self):
+        """Poisons the channel"""
         return await self._chan.poison()
 
 
@@ -176,7 +194,7 @@ class ChannelWriteEnd(ChannelEnd):
         return await self._chan._write(val)
 
     def __repr__(self):
-        return "<ChannelWriteEnd wrapping %s>" % self._chan
+        return f"<ChannelWriteEnd wrapping {self._chan}>"
 
     def alt_pending_write(self, obj):
         """Returns a pending write guard object that will only write if this guard
@@ -186,6 +204,14 @@ class ChannelWriteEnd(ChannelEnd):
 
 
 class ChannelReadEnd(ChannelEnd, Guard):
+    """Read end of a channel.
+
+    This can be used directly as a guard. As a guard, it will evaluate to ready
+    if the read operation can complete (or woken up by a matching write operation).
+    The return value from the guard will then be the value returned by the read.
+
+    The channel end also supports being used as an iterator (async for ch.read)"
+    """
     def __init__(self, chan):
         Guard.__init__(self)
         ChannelEnd.__init__(self, chan)
@@ -200,7 +226,7 @@ class ChannelReadEnd(ChannelEnd, Guard):
         return self._chan.rdisable(alt)
 
     def __repr__(self):
-        return "<ChannelReadEnd wrapping %s>" % self._chan
+        return f"<ChannelReadEnd wrapping {self._chan}>"
 
     # Support "async for ch.read"
     def __aiter__(self):
@@ -219,7 +245,7 @@ CH_READ = _ChanOpcode.READ
 CH_WRITE = _ChanOpcode.WRITE
 
 
-class _ChanOP:
+class _ChanOP:   # pylint: disable=R0903
     """Used to store channel cmd/ops for the op queues."""
     __slots__ = ['cmd', 'obj', 'fut', 'alt', 'wguard']    # reduce some overhead
 
@@ -228,6 +254,7 @@ class _ChanOP:
         self.obj = obj
         self.fut = None   # Future is used for commands that have to wait
         self.alt = alt    # None if normal read, reference to the ALT if tentative/alt
+        self.wguard = None
 
     def __repr__(self):
         return f"<_ChanOP: {self.cmd}>"
@@ -273,7 +300,7 @@ class Channel:
 
     def _rw_nowait(self, wcmd, rcmd):
         """Execute a 'read/write' and wakes up any futures.
-        Returns thereturn value for (write, read).
+        Returns the return value for (write, read).
          NB: a _read ALT calling _rw_nowait should send a non-ALT read
         instead of an ALT to avoid having an extra schedule() called on it.
         The same goes for write ops.
@@ -333,7 +360,7 @@ class Channel:
             if op.fut:
                 op.fut.set_result(None)
             if op.alt:
-                op.alt._poison(self)
+                op.alt.poison(self)
 
         self.poisoned = True
 
@@ -397,11 +424,12 @@ class Channel:
         if self.poisoned:
             assert len(self.queue) == 0, "Poisoned channels should never have queued messages"
 
-        assert len(self.queue) == 0 or all([x.cmd == self.queue[0].cmd for x in self.queue]), "Queue should be empty, or only contain messages with the same operation/cmd"
+        assert len(self.queue) == 0 or all(x.cmd == self.queue[0].cmd for x in self.queue), \
+               "Queue should be empty, or only contain messages with the same operation/cmd"
         return True
 
 
-async def poisonChannel(ch):
+async def poison_channel(ch):
     "Poisons a channel or a channel end."
     await ch.poison()
 
@@ -461,7 +489,7 @@ class Alternative:
     - The implementation does not, however, support a single Alt to send a read
       _and_ a write to the same channel as they might both resolve.
       That would require the select() function to return more than one guard.
-    - Don't let anything yield while runnning enable, disable priselect.
+    - Don't let anything yield while runnning enable, disable pri_select.
       NB: that would not let us run remote ALTs/Guards... but the reference implementation cannot
       do this anyway (there is no callback for schedule()).
     """
@@ -480,13 +508,13 @@ class Alternative:
 
     def _enable_guards(self):
         "Enable guards. Selects the first ready guard and stops, otherwise it will enable all guards."
-        self.enabled_guards = []   # TODO: check and raise an error if the list was not already empty
+        assert len(self.enabled_guards) == 0, "Running _enable_guards() on an alt with existing enabled guards"
         try:
             for g in self.guards:
                 self.enabled_guards.append(g)
                 enabled, ret = g.enable(self)
                 if enabled:
-                    # Current guard is ready, so use this immediately (works for priSelect).
+                    # Current guard is ready, so use this immediately (works for pri_select).
                     self.state = self._ALT_READY
                     return (g, ret)
             return (None, None)
@@ -498,7 +526,7 @@ class Alternative:
             raise e
 
     # This should not need to check for poison as any already enabled guards should have blabbered
-    # about the poison directly through alt._poison().
+    # about the poison directly through alt.poison().
     # Also, _disable_guards() is called when _enable_guards() detects poison.
     def _disable_guards(self):
         "Disables guards that we successfully entered in enable_guards."
@@ -506,62 +534,81 @@ class Alternative:
             g.disable(self)
         self.enabled_guards = []
 
-    # TODO: priSelect always tries the guards in the same order. The first successful will stop the attemt and unroll the other.
+    # TODO: pri_select always tries the guards in the same order. The first successful will stop the attemt and unroll the other.
     # If all guards are enabled, the first guard to succeed will unroll the others.
     # The result is that other types of select could be provided by reordering the guards before trying to enable them.
 
     async def select(self):
-        return await self.priSelect()
+        """Calls the default select method (currently pri_select) to wait for any one guard to become ready.
+        Returns a tuple with (selected guard, return value from guard).
+        """
+        return await self.pri_select()
 
-    async def priSelect(self):
-        # First, enable guards.
+    async def pri_select(self):
+        """Waits for any of the guards to become ready.
+
+        It generally uses three phases internally:
+        1) enable, where it enables guards, stopping if any is found to be ready
+        2) wait - it will wait until one of the guards becomes ready and calls schedule.
+           This phase is skipped if a guard was selected in the enable phase.
+        3) diable - any guards enabled in the enable phase will be disabled.
+
+        A guard that wakes up in phase 2 will notify the alt by calling schedule() on the alt.
+        See Channel for an example.
+
+        Returns a tuple with (selected guard, return value from guard).
+        """
+        # 1) First, enable guards.
         self.state = self._ALT_ENABLING
         g, ret = self._enable_guards()
         if g:
-            # We found a guard in enable_guards.
+            # We found a guard in enable_guards, skip to phase 3.
             self._disable_guards()
             self.state = self._ALT_INACTIVE
             return (g, ret)
 
-        # No guard has been selected yet. Wait for one of the guards to become "ready".
-        # The guards wake us up by calling schedule() on the alt (see Channel for example).
+        # 2) No guard has been selected yet. Wait for one of the guards to become "ready".
         self.state = self._ALT_WAITING
         self.wait_fut = self.loop.create_future()
         g, ret = await self.wait_fut
-        # By this time, everything should be resolved and we have a selected guard
-        # and a return value (possibly None). We have also disabled the guards.
-        # Poion that propagated while sleeping will be handled by _poison using set_exception().
+        # By this time, schedule() will have resolved everything and executed phase 3.
+        # The selected guard and return value are available in (g, ret)
+        # Poion that propagated while sleeping will be handled by poison using set_exception().
         self.state = self._ALT_INACTIVE
         return (g, ret)
 
     def schedule(self, guard, ret):
         """A wake-up call to processes ALTing on guards controlled by this object.
-        Called by the (self) selected guard."""
+        Called by the (self) selected guard.
+        """
         if self.state != self._ALT_WAITING:
             # So far, this has only occurred with a single process that tries to alt on both the read and write end
-            # of the same channel. In that case, the first guard is enabled but has to wait, and the second
-            # guard matches up with the first guard. They are both in the same ALT which is now in an enabling phase.
+            # of the same channel. In that case, the first guard is enabled, waiting for a matching operation. The second
+            # guard then matches up with the first guard. They are both in the same ALT which is now in an enabling phase.
             # If a wguard enter first, the rguard will remove the wguard (flagged as an ALT), match it with the
             # read (flagged as RD). rw_nowait will try to run schedule() on the wguard's ALT (the same ALT as the rguard's ALT)
             # which is still in the enabling phase.
             # We could get around this by checking if both ends reference the same ALT, but it would be more complicated code,
             # and (apart from rendesvouz with yourself) the semantics of reading and writing from the channel
-            # is confusing. You could end up writing without observing the result (the read has, strictly speaking,
-            # completed though).
+            # is confusing for a normal Alt (you would need something like a ParAlt).
+            # Furthermore, the results from the alt need to signal that there were two selected guards (and results).
+            # There is a risk of losing events that way. A workaround to detect this earlier could be to examine
+            # the guard list when running select() and trigger an exception here, but that would only work if
+            # we know beforehand which guards might create this problem.
             msg = f"Error: running schedule on an ALT that was in state {self.state} instead of waiting."
             raise Exception(msg)
         # NB: It should be safe to set_result as long as we don't yield in it.
         self.wait_fut.set_result((guard, ret))
         self._disable_guards()
 
-    def _poison(self, guard):
+    def poison(self, guard):
         """Used to poison an alt that has enabled guards"""
         msg = f"ALT {self} was poisoned by guard {guard}"
         # print(msg)
         # Running disable_guards is safe as long as none of the guards try to set the wait_fut
         self._disable_guards()
         if self.wait_fut.done():
-            print("WARNING: alt.wait_fut was already done in alt._poison. This will cause an exception.")
+            print("WARNING: alt.wait_fut was already done in alt.poison. This will raise an exception.")
         self.wait_fut.set_exception(ChannelPoisonException(msg))
 
     # Support for asynchronous context managers. Instead of the following:
@@ -569,7 +616,7 @@ class Alternative:
     # we can use this as an alternative:
     #    async with ALT as (g, ret):
     #     ....
-    # We may need to specify options to Alt if we want other options than priSelect.
+    # We may need to specify options to Alt if we want other options than pri_select.
     async def __aenter__(self):
         return await self.select()
 
