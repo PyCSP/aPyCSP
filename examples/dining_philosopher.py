@@ -1,4 +1,4 @@
-#!/usr/env/python3
+#!/usr/bin/env python3
 
 """
 Implementation of Dining Philosophers based on the description in Chapter 2.5 of:
