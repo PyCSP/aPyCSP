@@ -39,7 +39,7 @@ async def ParDelta2(cin, cout1, cout2):
     """Parallel version of Delta2"""
     async for t in cin:
         # NB: cout1(t) generates a coroutine, which is equivalent with a CSP process.
-        # This is therefore safe to do.
+        # This is therefore safe to do instead of creating a writer process per output.
         await Parallel(cout1(t),
                        cout2(t))
 

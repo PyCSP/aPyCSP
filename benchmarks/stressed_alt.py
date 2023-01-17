@@ -30,6 +30,8 @@ async def stressed_writer(cout, ready, writer_id):
 
 @process
 async def stressed_reader(channels, ready, n_writers, writers_per_chan):
+    """Measure the time to run either 'async with alt' or 'alt.select.
+    """
     print("Waiting for all writers to get going")
     for _ in range(n_writers):
         await ready()
@@ -66,6 +68,7 @@ async def stressed_reader(channels, ready, n_writers, writers_per_chan):
 
 
 async def run_bm():
+    """Sets up and runs the benchmark"""
     ready = Channel("ready")
     chans = [Channel(f'ch {i}') for i in range(N_CHANNELS)]
     procs = []

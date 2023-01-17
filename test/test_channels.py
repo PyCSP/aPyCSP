@@ -33,8 +33,9 @@ from apycsp import Channel, Spawn, Parallel, Sequence, ChannelPoisonException, p
 from apycsp.plugNplay import Identity
 
 
-# Check base_events.py, _run_once()
 def check_event_procs():
+    """Check base_events.py, _run_once()"""
+    # pylint: disable=protected-access
     loop = asyncio.get_running_loop()
     # print(loop)
     # print(dir(loop))
@@ -131,7 +132,7 @@ async def run_test_NW_writers_NR_readers(NW=1, NR=5, sleep=None):
         *[n_writer(N_WRITES, f"w-{rn}", ch.write, sleep) for rn in range(NW)],
         *[n_reader(N_READS,  f"r-{rn}", ch.read, sleep) for rn in range(NR)]
     )
-    assert all([r[1] == 'ok' for r in res]), "All results should be 'ok'"
+    assert all(r[1] == 'ok' for r in res), "All results should be 'ok'"
     assert len(res) == NW + NR, "Number of ok results should be equal to number of readers+writers"
     print(res)
     ch.verify()
@@ -176,8 +177,8 @@ async def test_poison_writer():
         Identity(c.read, d.write),
         n_reader(100, "reader", d.read),
     )
-    assert all([ch.verify() for ch in all_chans]), "All channels should verify as ok"
-    assert all([ch.poisoned for ch in all_chans]), "All channels should be poisoned"
+    assert all(ch.verify() for ch in all_chans), "All channels should verify as ok"
+    assert all(ch.poisoned for ch in all_chans), "All channels should be poisoned"
     assert res.count(None) == 4, "Should have had 4 poisoned processes"
     # look for the result from the Sequence with the writer
     w_res = [r for r in res if isinstance(r, (list, tuple))][0]
@@ -207,10 +208,6 @@ async def test_poison_reader():
     assert w_res[0][0] == 'reader', "Should be the reader process"
     assert w_res[0][1] == 'ok', 'reader should be ok'
     assert w_res[1] is None, 'ch.poison() should have returned None'
-
-
-async def test_foo():
-    assert 1 == 1
 
 
 # TODO: channel.poison() should perhaps only insert a poison token on the channel.
