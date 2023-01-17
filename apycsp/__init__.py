@@ -3,9 +3,9 @@
 
 import collections
 import functools
+import types
 from enum import Enum
 import asyncio
-import types
 
 
 # ******************** Core code ********************
@@ -17,22 +17,27 @@ class ChannelPoisonException(Exception):
 def chan_poisoncheck(func):
     "Decorator for making sure that poisoned channels raise ChannelPoinsonException."
     @functools.wraps(func)
-    async def p_wrap(self, *args, **kwargs):
-        try:
-            if self.poisoned:
-                return None   # Channel poisoned will be raised in finally
+    def p_wrap(self, *args, **kwargs):
+        # Only check for poison on entry.
+        # A poison applied to a channel should only influence any operations that sleep
+        # on the channel or ones that try to submit a new operation _after_ the poison
+        # was applied.
+        # Otherwise there might be a race where a successful read/write lets one of the processes
+        # return from the operation and poison the channel before the other process wakes up.
+        # Sometimes the late process would be poisoned on a successful operation, sometimes
+        # it would not.
+        if self.poisoned:
+            raise ChannelPoisonException()
 
-            # NB: The await here is necessary to be able to check for channel poison both before
-            # and after completing the execution of the function.
-            return await func(self, *args, **kwargs)
-        finally:
-            if self.poisoned:
-                raise ChannelPoisonException()
+        # This could just return the coroutine here and let the outside await it instead of
+        # simply adding another layer of await.
+        return func(self, *args, **kwargs)
     return p_wrap
 
 
 def process(verbose_poison=False):
-    """Annotates a coroutine as a process and takes care of poison propagation.
+    """Decorator for creating process functions.
+    Annotates a function as a process and takes care of poison propagation.
 
     If the optional 'verbose_poison' parameter is true, the decorator will print
     a message when it captures the ChannelPoisonException after the process
@@ -65,8 +70,10 @@ def process(verbose_poison=False):
     return inner_dec
 
 
-async def Parallel(*procs):   # pylint: disable=C0103
+# pylint: disable-next=C0103
+async def Parallel(*procs):
     """Used to run a set of processes concurrently.
+    Takes a list of processes which are started.
     Waits for the processes to complete, and returns a list of return values from each process.
     """
     # TODO: asyncio.gather specifies that the results will be in the order of the provided coroutines.
@@ -75,7 +82,8 @@ async def Parallel(*procs):   # pylint: disable=C0103
     return await asyncio.gather(*procs)
 
 
-async def Sequence(*procs):   # pylint: disable=C0103
+# pylint: disable-next=C0103
+async def Sequence(*procs):
     """Runs and waits for each process or coroutine in sequence.
     The return values from each process are returned in the same order as the processes
     were specified.
@@ -83,7 +91,8 @@ async def Sequence(*procs):   # pylint: disable=C0103
     return [await p for p in procs]
 
 
-def Spawn(proc):   # pylint: disable=C0103
+# pylint: disable-next=C0103
+def Spawn(proc):
     """For running a process in the background. Actual execution is only
     possible as long as the event loop is running."""
     loop = asyncio.get_running_loop()
@@ -141,7 +150,7 @@ class Timer(Guard):
         self.alt.schedule(self, ret)
 
     def __repr__(self):
-        return f"<Timer ({self.seconds} S), exp: {self.expired}, mut: {self._mutation}>"
+        return f"<Timer ({self.seconds} S), exp: {self.expired}>"
 
 
 # ******************** Channels ********************
@@ -245,7 +254,8 @@ CH_READ = _ChanOpcode.READ
 CH_WRITE = _ChanOpcode.WRITE
 
 
-class _ChanOP:   # pylint: disable=R0903
+# pylint: disable-next=R0903
+class _ChanOP:
     """Used to store channel cmd/ops for the op queues."""
     __slots__ = ['cmd', 'obj', 'fut', 'alt', 'wguard']    # reduce some overhead
 
@@ -358,7 +368,8 @@ class Channel:
         while len(self.queue) > 0:
             op = self.queue.popleft()
             if op.fut:
-                op.fut.set_result(None)
+                # op.fut.set_result(None)
+                op.fut.set_exception(ChannelPoisonException("poisoned while sleeping/waiting for op"))
             if op.alt:
                 op.alt.poison(self)
 
@@ -374,7 +385,7 @@ class Channel:
     def renable(self, alt):
         """enable for the input/read end"""
         if self.poisoned:
-            raise ChannelPoisonException(f"wenable on channel {self} {alt=}")
+            raise ChannelPoisonException(f"renable on channel {self} {alt=}")
 
         rcmd = _ChanOP(CH_READ, None)
         if (wcmd := self._pop_matching(CH_WRITE)) is not None:
