@@ -235,7 +235,13 @@ class ChannelReadEnd(ChannelEnd, Guard):
         return self
 
     async def __anext__(self):
-        return await self._chan._read()
+        if self._chan.poisoned:
+            raise StopAsyncIteration
+        try:
+            return await self._chan._read()
+        except PoisonException:
+            # The iterator interface should not terminate using PoisonException
+            raise StopAsyncIteration
 
 
 class _ChanOpcode(Enum):
