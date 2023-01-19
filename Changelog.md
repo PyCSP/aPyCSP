@@ -34,5 +34,26 @@
      n_procs runs about twice as fast with the altimpl version as with the 
      baseimpl. TODO: rename altimpl to avoid confusion with ALT. 
 
+2023-01-18
+     Automatic poison propagation quickly gets too complicated to manage
+     as the decision of where to propagate poison was done at a place where
+     the system had no idea about when it was safe to propagate poison and 
+     which channels should or should not be poisoned. 
+     
+     aPyCSP and PyCSP makes the following changes to simplify semantics: 
+     - ChannelPoisonException -> PoisonException  (needlessly verbose name)
+     - Poison is no longer automatically propagated. 
+       A process still receives a PoisonException when trying to read and
+       write to a poisoned channel, but the responsibility of propagating
+       poison is left to the process or the parent that waits for the
+       poisoned process to terminate (where the structure and semantics
+       can be known)
+     - Poison is transformed into a StopIteration exception if the channel
+       is read from as an iterator. This makes it easier to do things like: 
+           `async for msg in ch:`
+       or just: 
+           msgs = list(chan)
+
+
 
  
