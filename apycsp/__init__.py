@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
 """Core implementation of the aPyCSP library. See README.md for more information.
+
+
+Poison applied to a channel should only influence any operations that try to
+enter the channel _after_ the poison was applied, or the ones that were already
+queued. Checking for poison on returning for an operation could cause a race
+condition where, for instance, a reader is woken up with a value that was read,
+but some other process manages to poison the channel before the reader is
+scheduled to execute. When the reader gets to execute, it is wrongfully
+poisoned.
+
+TODO: changed behaviour: Do not try to propagate poison to other channels from
+@process.  It's the wrong place to do this as it places responsibility of the
+writer of the process to know something about the network around it.
+
 """
 
 import collections
@@ -15,30 +29,11 @@ class PoisonException(Exception):
     """Used to interrupt processes accessing poisoned channels."""
 
 
-def chan_poisoncheck(func):
-    "Decorator for making sure that poisoned channels raise PoisonException."
-    @functools.wraps(func)
-    def p_wrap(self, *args, **kwargs):
-        # Only check for poison on entry.
-        # A poison applied to a channel should only influence any operations that sleep
-        # on the channel or ones that try to submit a new operation _after_ the poison
-        # was applied.
-        # Otherwise there might be a race where a successful read/write lets one of the processes
-        # return from the operation and poison the channel before the other process wakes up.
-        # Sometimes the late process would be poisoned on a successful operation, sometimes
-        # it would not.
-        if self.poisoned:
-            raise PoisonException()
-
-        # This could just return the coroutine here and let the outside await it instead of
-        # simply adding another layer of await.
-        return func(self, *args, **kwargs)
-    return p_wrap
-
-
+# TODO: use_pwrap = False?  that way, optionally get  func() => wrapper,  await func() returns result?
 def process(verbose_poison=False):
     """Decorator for creating process functions.
-    Annotates a function as a process and takes care of poison propagation.
+    Annotates a function as a process and takes care of insulating parents from accidental
+    poison propagation.
 
     If the optional 'verbose_poison' parameter is true, the decorator will print
     a message when it captures the PoisonException after the process
@@ -52,12 +47,6 @@ def process(verbose_poison=False):
             except PoisonException:
                 if verbose_poison:
                     print(f"Process poisoned: {proc_wrapped}({args=}, {kwargs=})")
-                # TODO: changed. Do not try to propagate poison. It's the wrong place to do this
-                # as it places responsibility of the writer of the process to know something about
-                # the network around it.
-                # Propagate poison to any channels and channel ends passed as parameters to the process.
-                # for ch in [x for x in args if isinstance(x, (ChannelEnd, Channel))]:
-                #    await ch.poison()
         return proc_wrapped
 
     # Decorators with optional arguments are a bit tricky in Python.
@@ -315,9 +304,8 @@ class Channel:
     def _rw_nowait(self, wcmd, rcmd):
         """Execute a 'read/write' and wakes up any futures.
         Returns the return value for (write, read).
-         NB: a _read ALT calling _rw_nowait should send a non-ALT read
-        instead of an ALT to avoid having an extra schedule() called on it.
-        The same goes for write ops.
+        NB: an ALT operation should submit a non-ALT here to avoid having
+        an extra schedule() called on it.
         """
         obj = wcmd.obj
         if wcmd.fut:
@@ -341,8 +329,9 @@ class Channel:
     # NB: See docstring for the channels. The queue is either empty, or it has
     # a number of queued operations of a single type. There is never both a
     # read and a write in the same queue.
-    @chan_poisoncheck
     async def _read(self):
+        if self.poisoned:
+            raise PoisonException
         rcmd = _ChanOP(CH_READ, None)
         if (wcmd := self._pop_matching(CH_WRITE)) is not None:
             # Found a match
@@ -351,8 +340,9 @@ class Channel:
         # No write to match up with. Wait.
         return await self._wait_for_op(rcmd)
 
-    @chan_poisoncheck
     async def _write(self, obj):
+        if self.poisoned:
+            raise PoisonException
         wcmd = _ChanOP(CH_WRITE, obj)
         if (rcmd := self._pop_matching(CH_READ)) is not None:
             return self._rw_nowait(wcmd, rcmd)[0]
@@ -484,8 +474,9 @@ class BufferedChannel(Channel):
     def __init__(self, name="", loop=None):
         super().__init__(name=name, loop=loop)
 
-    @chan_poisoncheck
     async def _write(self, obj):
+        if self.poisoned:
+            raise PoisonException
         wcmd = _ChanOP(CH_WRITE, obj)
         if (rcmd := self._pop_matching(CH_READ)) is not None:
             return self._rw_nowait(wcmd, rcmd)[0]
