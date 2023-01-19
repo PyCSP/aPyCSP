@@ -96,7 +96,7 @@ TODO: - Replace the queues with buffered channels?
 
 import asyncio
 import json
-from apycsp import ChannelPoisonException, Channel, ChannelReadEnd, ChannelWriteEnd, Parallel
+from apycsp import PoisonException, Channel, ChannelReadEnd, ChannelWriteEnd, Parallel
 
 
 # registry of channels to expose to the net. Keys are the names.
@@ -282,8 +282,8 @@ class Connection():
                     res = await chan.write(cmd['msg'])
                 else:
                     res = await chan.poison()
-            except ChannelPoisonException:
-                exc = 'ChannelPoisonException'
+            except PoisonException:
+                exc = 'PoisonException'
                 print("Tried to run op on poisoned channel", op, chan.name)
             await reply(msgno, res, exc=exc)
             return
@@ -351,8 +351,8 @@ class Connection():
         res = await rq
         if msgno in self._opqueue:
             del self._opqueue[msgno]  # Delete queue after command is finished. It may have already been removed in case of lost conn.
-        if res.get('exc', None) == 'ChannelPoisonException':
-            raise ChannelPoisonException()
+        if res.get('exc', None) == 'PoisonException':
+            raise PoisonException()
         if res.get('connlost', None):
             msg = f"Lost connection while waiting for {cmd} on {self}"
             raise ConnectionError(msg)

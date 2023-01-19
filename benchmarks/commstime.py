@@ -16,7 +16,7 @@ import os
 import time
 import asyncio
 import apycsp
-from apycsp import process, Parallel
+from apycsp import process, Parallel, Sequence
 from apycsp.plugNplay import Delta2, Prefix, Successor
 from apycsp.utils import handle_common_args
 import sys
@@ -57,8 +57,14 @@ async def CommsTimeBM(run_no, Delta2=Delta2):
         Prefix(c.read, a.write, prefixItem=0),    # initiator
         Delta2(a.read, b.write, d.write),         # forwarding to two
         Successor(b.read, c.write),               # feeding back to prefix
-        consumer(d.read, run_no))                 # timing process
-    return rets[-1]
+        Sequence(
+            consumer(d.read, run_no),             # timing process
+            a.poison(),
+            b.poison(),
+            c.poison(),
+            d.poison()
+        ))
+    return rets[-1][0]
 
 
 def run_bm(Delta2=apycsp.plugNplay.Delta2):
@@ -81,7 +87,7 @@ print("| " + " | ".join([" ".join(sys.argv)] + [f"{v:7.3f}" for v in tpd + tsd])
 # A bit of a hack, but windows does not have uname()
 try:
     os.uname()
-except:
+except AttributeError:
     print("Sleeping for a while to allow windows users to read benchmark results")
     time.sleep(15)
 

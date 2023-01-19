@@ -10,7 +10,7 @@ import os
 import apycsp
 import apycsp.net
 from apycsp.plugNplay import Delta2, Prefix, Successor
-from apycsp import Parallel, process
+from apycsp import Parallel, Sequence, process
 from apycsp.utils import handle_common_args
 
 args = handle_common_args([
@@ -61,7 +61,13 @@ async def CommsTimeBM(prefix, chan_lst):
         Prefix(c.read, a.write, prefixItem=0),    # initiator
         Delta2(a.read, b.write, d.write),         # forwarding to two
         Successor(b.read, c.write),               # feeding back to prefix
-        consumer(d.read))                         # timing process
+        Sequence(
+            consumer(d.read),                     # timing process
+            a.poison(),
+            b.poison(),
+            c.poison(),
+            d.poison()))
+            
     return rets[-1]
 
 

@@ -29,8 +29,9 @@ _ready and _scheduled queues in the event loop.
 
 """
 import asyncio
-from apycsp import Channel, Spawn, Parallel, Sequence, ChannelPoisonException, process
+from apycsp import Channel, Spawn, Parallel, Sequence, PoisonException, process
 from apycsp.plugNplay import Identity
+from apycsp.utils import aenumerate
 
 
 def check_event_procs():
@@ -55,6 +56,12 @@ async def unsafe_wait_until_blocked(procs):
 
 
 @process
+async def print_proc(msg):
+    "Simply prints the message"
+    print(msg)
+
+
+@process
 async def n_writer(N, pid, cout, sleep=None):
     """Process that sends N messages, printing out status for every write.
     If sleep is not None, it will try to use that as a sleep interval between each operation.
@@ -68,7 +75,7 @@ async def n_writer(N, pid, cout, sleep=None):
                 await asyncio.sleep(sleep)
         print("Writer finished")
         return (pid, 'ok')
-    except ChannelPoisonException as cp:
+    except PoisonException as cp:
         print(f"writer {pid} got poisoned")
         raise cp
 
@@ -87,9 +94,19 @@ async def n_reader(N, pid, cin, sleep=None):
                 await asyncio.sleep(sleep)
         print("Reader finished")
         return (pid, 'ok')
-    except ChannelPoisonException as cp:
+    except PoisonException as cp:
         print(f"reader {pid} got poisoned")
         raise cp
+
+
+@process
+async def inf_reader(pid, cin, sleep=None):
+    """Process that reads from a channel until the channel is poisoned or closed."""
+    async for i, msg in aenumerate(cin):
+        print(f"reader {pid} got msg #{i}: {msg}")
+        if sleep:
+            await asyncio.sleep(sleep)
+    print(f"reader {pid} terminating")
 
 
 async def test_read_write(N=5):
@@ -169,17 +186,33 @@ async def test_poison_writer():
     res = await Parallel(
         Sequence(
             n_writer(10, "writer", a.write),
+            print_proc("Writer done"),
             a.poison()
         ),
         # The following processes should only terminate if poisoned
-        Identity(a.read, b.write),
-        Identity(b.read, c.write),
-        Identity(c.read, d.write),
+        Sequence(
+            Identity(a.read, b.write),
+            print_proc("Identity 1 done"),
+            b.poison(),
+        ),
+        Sequence(
+            Identity(b.read, c.write),
+            print_proc("Identity 2 done"),
+            c.poison(),
+        ),
+        Sequence(
+            Identity(c.read, d.write),
+            print_proc("Identity 3 done"),
+            d.poison(),
+        ),
         n_reader(100, "reader", d.read),
     )
     assert all(ch.verify() for ch in all_chans), "All channels should verify as ok"
     assert all(ch.poisoned for ch in all_chans), "All channels should be poisoned"
-    assert res.count(None) == 4, "Should have had 4 poisoned processes"
+    pgroup = [r for r in res if r == [None, None, None]]
+    # print(pgroup)
+    assert len(pgroup) == 3, "Should have had 3 poisoned processes in a group"
+    assert res.count(None) == 1, "Should have only 1 top level process that was poisoned"
     # look for the result from the Sequence with the writer
     w_res = [r for r in res if isinstance(r, (list, tuple))][0]
     assert w_res[0][0] == 'writer', "Should be the writer process"
@@ -209,6 +242,22 @@ async def test_poison_reader():
     assert w_res[0][1] == 'ok', 'reader should be ok'
     assert w_res[1] is None, 'ch.poison() should have returned None'
 
+
+
+async def test_read_until_channel_poisoned():
+    """Tests the async for reading from channels"""
+    ch = Channel("poison-read")
+    print("----------- testing async for reading from channel -------")
+    res = await Parallel(
+        Sequence(
+            n_writer(100, "writer-1", ch.write),
+            ch.poison()
+        ),
+        # inf_reader('r-1', ch)
+        inf_reader('r-1', ch.read)
+    )
+    print(res)
+    
 
 # TODO: channel.poison() should perhaps only insert a poison token on the channel.
 # if writes queued:

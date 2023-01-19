@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Core implementation of the aPyCSP library. See README.md for more information."""
+"""Core implementation of the aPyCSP library. See README.md for more information.
+"""
 
 import collections
 import functools
@@ -10,12 +11,12 @@ import asyncio
 
 # ******************** Core code ********************
 
-class ChannelPoisonException(Exception):
+class PoisonException(Exception):
     """Used to interrupt processes accessing poisoned channels."""
 
 
 def chan_poisoncheck(func):
-    "Decorator for making sure that poisoned channels raise ChannelPoinsonException."
+    "Decorator for making sure that poisoned channels raise PoisonException."
     @functools.wraps(func)
     def p_wrap(self, *args, **kwargs):
         # Only check for poison on entry.
@@ -27,7 +28,7 @@ def chan_poisoncheck(func):
         # Sometimes the late process would be poisoned on a successful operation, sometimes
         # it would not.
         if self.poisoned:
-            raise ChannelPoisonException()
+            raise PoisonException()
 
         # This could just return the coroutine here and let the outside await it instead of
         # simply adding another layer of await.
@@ -40,7 +41,7 @@ def process(verbose_poison=False):
     Annotates a function as a process and takes care of poison propagation.
 
     If the optional 'verbose_poison' parameter is true, the decorator will print
-    a message when it captures the ChannelPoisonException after the process
+    a message when it captures the PoisonException after the process
     was poisoned.
     """
     def inner_dec(func):
@@ -48,12 +49,15 @@ def process(verbose_poison=False):
         async def proc_wrapped(*args, **kwargs):
             try:
                 return await func(*args, **kwargs)
-            except ChannelPoisonException:
+            except PoisonException:
                 if verbose_poison:
                     print(f"Process poisoned: {proc_wrapped}({args=}, {kwargs=})")
+                # TODO: changed. Do not try to propagate poison. It's the wrong place to do this
+                # as it places responsibility of the writer of the process to know something about
+                # the network around it.
                 # Propagate poison to any channels and channel ends passed as parameters to the process.
-                for ch in [x for x in args if isinstance(x, (ChannelEnd, Channel))]:
-                    await ch.poison()
+                # for ch in [x for x in args if isinstance(x, (ChannelEnd, Channel))]:
+                #    await ch.poison()
         return proc_wrapped
 
     # Decorators with optional arguments are a bit tricky in Python.
@@ -356,6 +360,11 @@ class Channel:
         # No read to match up with. Wait.
         return await self._wait_for_op(wcmd)
 
+    async def close(self):
+        """At the moment, close and poison are identical.
+        """
+        return await self.poison()
+
     async def poison(self):
         """Poison a channel and wake up all ops in the queues so they can catch the poison."""
         # This doesn't need to be an async method any longer, but we
@@ -369,7 +378,7 @@ class Channel:
             op = self.queue.popleft()
             if op.fut:
                 # op.fut.set_result(None)
-                op.fut.set_exception(ChannelPoisonException("poisoned while sleeping/waiting for op"))
+                op.fut.set_exception(PoisonException("poisoned while sleeping/waiting for op"))
             if op.alt:
                 op.alt.poison(self)
 
@@ -385,7 +394,7 @@ class Channel:
     def renable(self, alt):
         """enable for the input/read end"""
         if self.poisoned:
-            raise ChannelPoisonException(f"renable on channel {self} {alt=}")
+            raise PoisonException(f"renable on channel {self} {alt=}")
 
         rcmd = _ChanOP(CH_READ, None)
         if (wcmd := self._pop_matching(CH_WRITE)) is not None:
@@ -405,7 +414,7 @@ class Channel:
     def wenable(self, alt, pguard):
         """Enable write guard."""
         if self.poisoned:
-            raise ChannelPoisonException(f"wenable on channel {self} {alt=} {pguard=}")
+            raise PoisonException(f"wenable on channel {self} {alt=} {pguard=}")
 
         wcmd = _ChanOP(CH_WRITE, pguard.obj)
         if (rcmd := self._pop_matching(CH_READ)) is not None:
@@ -428,7 +437,16 @@ class Channel:
         return self
 
     async def __anext__(self):
-        return await self._read()
+        """Instead of raising poison, let the loop terminate normally.
+        Emulate more of the channel close() semantics.
+        """
+        if self.poisoned:
+            raise StopAsyncIteration
+        try:
+            return await self._read()
+        except PoisonException:
+            # The iterator interface should not terminate using PoisonException
+            raise StopAsyncIteration
 
     def verify(self):
         """Checks the state of the channel using assert."""
@@ -529,7 +547,7 @@ class Alternative:
                     self.state = self._ALT_READY
                     return (g, ret)
             return (None, None)
-        except ChannelPoisonException as e:
+        except PoisonException as e:
             # Disable any enabled guards.
             self._disable_guards()
             self.state = self._ALT_INACTIVE
@@ -620,7 +638,7 @@ class Alternative:
         self._disable_guards()
         if self.wait_fut.done():
             print("WARNING: alt.wait_fut was already done in alt.poison. This will raise an exception.")
-        self.wait_fut.set_exception(ChannelPoisonException(msg))
+        self.wait_fut.set_exception(PoisonException(msg))
 
     # Support for asynchronous context managers. Instead of the following:
     #    (g, ret) = ALT.select():

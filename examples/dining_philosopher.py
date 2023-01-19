@@ -86,8 +86,7 @@ def reporter(state_info, pid):
         # Now do actions.
         if len(actions) == 1:
             return await actions[0]
-        else:
-            return [await a for a in actions]
+        return [await a for a in actions]
     return func
 
 
@@ -139,7 +138,7 @@ async def update_state(cin, states):
         if n % 10 == 0:
             # Print header
             print("----" * len(states), n)
-            print("  ".join([p for p in states.keys()]))
+            print("  ".join(list(states.keys())))
 
         print(" ".join([pretty_state(s, p == pid) for p, s in states.items()]))
 
@@ -241,7 +240,7 @@ async def start_group(N=5, max_eats=3):
 
     proc_ids = ['FM'] + [f'F{i}'for i in range(N)] + [f"P{i}" for i in range(N)]
     init_state = {pid : '--' for pid in proc_ids}
-    poison_chans = [ask_join, ask_leave] + fork_ch
+    poison_chans = [state_info, ask_join, ask_leave] + fork_ch
 
     # Use a taskgroup to make sure every process is finishing before returning
     async with CSPTaskGroup() as tg:
@@ -257,8 +256,7 @@ async def start_group(N=5, max_eats=3):
         ])
         print("Philosophers done")
 
-        # Poison channels to processes. This demonstrates how poison propagation leads to the
-        # state_info channel being poisoned as well.
+        # Poison channels to processes.
         print("Poisoning channels:")
         for ch in poison_chans:
             print("- poisoning", ch.name)
@@ -299,7 +297,7 @@ async def start_group_2(N=5, max_eats=3):
 
     proc_ids = ['FM'] + [f'F{i}'for i in range(N)] + [f"P{i}" for i in range(N)]
     init_state = {pid : '--' for pid in proc_ids}
-    poison_chans = [ask_join, ask_leave] + fork_ch
+    poison_chans = [state_info, ask_join, ask_leave] + fork_ch
 
     await Parallel(
         update_state(state_info.read, init_state),

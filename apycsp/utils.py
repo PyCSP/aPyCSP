@@ -5,7 +5,7 @@
 
 import argparse
 import asyncio
-from apycsp import Spawn, ChannelPoisonException
+from apycsp import Spawn, PoisonException
 
 # Common arguments are added and handled here. The general outline for a program is to
 # use common.handle_common_args() with a list of argument specs to add.
@@ -83,13 +83,13 @@ class CSPTaskGroup:
             print(f"TaskGroup {self.name} waiting for procs to finish")
         if exc is not None:
             print("Caught exception", et, exc, traceback)
-            if isinstance(exc, ChannelPoisonException) and self.poison_shield:
+            if isinstance(exc, PoisonException) and self.poison_shield:
                 self.poisoned = True
                 return
             raise exc
         try:
             ret = await asyncio.gather(*self.group)
-        except ChannelPoisonException as cp:
+        except PoisonException as cp:
             if self.verbose:
                 print("Caught exception while waiting for asyncio.gather", cp)
             self.poisoned = True
@@ -102,3 +102,10 @@ class CSPTaskGroup:
 
     def __repr__(self):
         return f"<CSPTaskGroup, gsize={len(self.group)}>"
+
+
+async def aenumerate(coroutine, start=0):
+    """Coroutine version of enumerate that can be used in an async for"""
+    async for val in coroutine:
+        yield (start, val)
+        start += 1
