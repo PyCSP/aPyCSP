@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Copyright (c) 2018 John Markus Bjørndalen, jmb@cs.uit.no.
+# Copyright (c) 2023 John Markus Bjørndalen, jmb@cs.uit.no.
 # See LICENSE.txt for licensing details (MIT License).
 
 import argparse
@@ -71,6 +71,8 @@ class CSPTaskGroup:
         self.poison_shield = poison_shield
 
     def spawn(self, proc):
+        """Spawns a process. The process is registered with the group, and
+        the context will wait for this process before it exits."""
         handle = Spawn(proc)
         self.group.append(handle)
         return handle
