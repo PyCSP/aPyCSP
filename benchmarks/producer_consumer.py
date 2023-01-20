@@ -25,11 +25,11 @@ async def producer(cout, n_warm, n_runs):
 
 @process
 async def consumer(cin, n_warm, n_runs, run_no):
-    for i in range(n_warm):
+    for _ in range(n_warm):
         await cin()
     ts = time.time
     t1 = ts()
-    for i in range(n_runs):
+    for _ in range(n_runs):
         await cin()
     t2 = ts()
     dt = (t2 - t1) * 1_000_000  # in microseconds

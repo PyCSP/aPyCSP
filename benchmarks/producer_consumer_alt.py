@@ -12,7 +12,8 @@ import apycsp
 from apycsp import process, Parallel, Alternative
 from apycsp.utils import handle_common_args, avg
 
-print("--------------------- Producer/consumer --------------------")
+print("--------------------- Producer/consumer using alting writer --------------------")
+# Do this before importing pycsp to make sure it is correctly set up (like using the right Channel version)
 args = handle_common_args([
     (("-profile",), dict(help="profile", action="store_const", const=True, default=False)),
 ])
@@ -21,6 +22,7 @@ Channel = apycsp.Channel    # in case command line arguments replaced the Channe
 
 @process
 async def alting_producer(outputs, n_warm, n_runs):
+    """Uses alt to pick which output channel to send on in every iteration."""
     async def send(val):
         # need to create the guards and the alts every iteration
         guards = [out.alt_pending_write(val) for out in outputs]
@@ -34,7 +36,8 @@ async def alting_producer(outputs, n_warm, n_runs):
 
 
 @process
-async def producer(outputs, n_warm, n_runs):
+async def rr_producer(outputs, n_warm, n_runs):
+    """Sends (round robin) over the output channels"""
     for i in range(n_warm):
         await outputs[i % len(outputs)](i)
     for i in range(n_runs):
@@ -43,12 +46,13 @@ async def producer(outputs, n_warm, n_runs):
 
 @process
 async def consumer(inputs, n_warm, n_runs, run_no):
+    """Uses alt to read from any ready channel in every iteration"""
     alt = Alternative(*inputs)
-    for i in range(n_warm):
+    for _ in range(n_warm):
         await alt.select()
     ts = time.time
     t1 = ts()
-    for i in range(n_runs):
+    for _ in range(n_runs):
         await alt.select()
     t2 = ts()
     dt = (t2 - t1) * 1_000_000  # in microseconds
@@ -57,7 +61,8 @@ async def consumer(inputs, n_warm, n_runs, run_no):
     return per_rw
 
 
-async def run_bm(producer=producer, N_CHANNELS=5):
+async def run_bm(producer=rr_producer, N_CHANNELS=5, print_header=False):
+    """Given a producer, run the benchmark and print results usable for a markdown table."""
     N_BM = 10
     N_WARM = 100
     N_RUN   = 10_000
@@ -70,9 +75,8 @@ async def run_bm(producer=producer, N_CHANNELS=5):
         rets = await Parallel(
             producer(ch_writes, N_WARM, N_RUN),
             consumer(ch_reads, N_WARM, N_RUN, i))
-        # print(rets)
         res.append(rets[-1])
-    if nc == 1:
+    if print_header:
         print("Res with nchans, min, avg, max")
     args = " ".join(sys.argv[1:])
     print(f"| {producer.__name__}-consumer alt {args} | {N_CHANNELS} | {min(res):7.3f} | {avg(res):7.3f} |{max(res):7.3f} |")
@@ -80,10 +84,11 @@ async def run_bm(producer=producer, N_CHANNELS=5):
 
 
 if __name__ == "__main__":
-    for nc in [1, 2, 4, 6, 8, 10]:
-        asyncio.run(run_bm(N_CHANNELS=nc))
-    for nc in [1, 2, 4, 6, 8, 10]:
-        asyncio.run(run_bm(producer=alting_producer, N_CHANNELS=nc))
+    for i, nc in enumerate([1, 2, 4, 6, 8, 10]):
+        asyncio.run(run_bm(N_CHANNELS=nc, print_header=i == 0))
+    for i, nc in enumerate([1, 2, 4, 6, 8, 10]):
+        asyncio.run(run_bm(producer=alting_producer, N_CHANNELS=nc, print_header=i == 0))
+
     if args.profile:
         import cProfile
         cProfile.run("run_bm()", sort='tottime')

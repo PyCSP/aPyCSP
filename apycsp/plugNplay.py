@@ -67,3 +67,13 @@ async def Mux2(cin1, cin2, cout):
     while True:
         _, val = await alt.pri_select()
         await cout(val)
+
+
+# Not from JCSP
+@process
+async def poison_chans(*chans, verbose=False):
+    """Process used to poison a list of channels"""
+    for ch in chans:
+        if verbose:
+            print("poison_chans() - poison", ch)
+        await ch.poison()
