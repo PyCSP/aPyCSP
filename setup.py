@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 #
 # see http://docs.python.org/dist/dist.html
-#
-from distutils.core import setup
+# https://setuptools.pypa.io/en/latest/userguide/quickstart.html
+from setuptools import setup
+
 
 
 setup(name='apycsp',
@@ -13,6 +14,6 @@ setup(name='apycsp',
       author_email='jmb@cs.uit.no',
       url='https://github.com/PyCSP/aPyCSP',
       license='MIT',
-      packages=['apycsp', 'apycsp.plugNplay', 'apycsp.net'],
+      packages=['apycsp', 'apycsp.net'],
       platforms=['any'],
       )
