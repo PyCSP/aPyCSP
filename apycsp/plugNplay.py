@@ -58,7 +58,7 @@ async def Successor(cin, cout):
 
 @process
 async def SkipProcess():
-    pass
+    """Process that doesn't do anything"""
 
 
 @process
