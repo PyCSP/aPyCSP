@@ -15,7 +15,8 @@ class Alternative:
     2. If the alt is waiting for a guard to go ready, the first guard to
        switch to ready will immediately jump into the ALT and execute the necessary bits
        to resolve and execute operations (like read in a channel).
-       This is possible as there is no lock and we're running single-threaded code.
+       This is possible as there is no lock and we're running single-threaded code (with a few
+       rules for how to do this safely).
        This means that searching for guards in disable_guards is no longer necessary.
     3. disable_guards is simply cleanup code removing the ALT from the guards.
     This requires that all guard code is synchronous / atomic.
@@ -23,7 +24,7 @@ class Alternative:
     NB:
     - This implementation supports multiple ALT readers on a channel
       (the first one will be resolved).
-    - As everything is resolved atomically it is safe to allow allow
+    - As everything is resolved atomically it is safe to allow
       ALT writers and ALT readers in the same channel.
     - The implementation does not, however, support a single Alt to send a read
       _and_ a write to the same channel as they might both resolve.
