@@ -61,7 +61,7 @@ class CSPTaskGroup:
     This is in the test/examples code as I have not thought about the semantics and the idea yet.
     I'm just using it for test-code at the moment.
     """
-    def __init__(self, name=None, verbose=True, poison_shield=False):
+    def __init__(self, name=None, verbose=False, poison_shield=False):
         self.group = []
         self.verbose = verbose
         self.name = name

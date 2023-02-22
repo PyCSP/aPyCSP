@@ -8,7 +8,7 @@ from setuptools import setup
 
 setup(
     name='apycsp',
-    version='0.9.0',
+    version='0.9.1',
     description='aPyCSP - Python CSP Library using asyncio',
     author='John Markus Bjørndalen',
     author_email='jmb@cs.uit.no',

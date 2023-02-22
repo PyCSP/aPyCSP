@@ -96,7 +96,7 @@ TODO: - Replace the queues with buffered channels?
 
 import asyncio
 import json
-from apycsp import PoisonException, Channel, ChannelReadEnd, ChannelWriteEnd, Parallel
+from apycsp import PoisonException, Channel, ChannelReadEnd, ChannelWriteEnd, Parallel, Spawn
 
 
 # registry of channels to expose to the net. Keys are the names.
@@ -242,7 +242,7 @@ class Connection():
             if message is None or message == '':
                 print(f"Probably lost connection - {self.reader.at_eof()=}")
                 break
-            self.loop.create_task(self._msg_handler(json.loads(message)))
+            Spawn(self._msg_handler(json.loads(message)))
         print(f"_stream_reader done {self.reader.at_eof()=}")
         if self.wqueue:
             await self.wqueue.put(self.MSG_KILL)    # put token on output queue to wake up and kill writer
@@ -259,7 +259,7 @@ class Connection():
 
     async def start_stream_handlers(self):
         """Typicaly used when setting up client connections."""
-        asyncio.create_task(self.run_stream_handlers())
+        Spawn(self.run_stream_handlers())
 
     async def _op_handler(self, cmd):
         """Interprets and runs the command, waits for and queues the result (including exceptions) on oqueue"""
